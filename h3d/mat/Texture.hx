@@ -50,9 +50,9 @@ class Texture {
 		If set to null, depth testing is disabled.
 	**/
 	public var depthBuffer : DepthBuffer;
-	
+
 	var _lastFrame:Int;
-	
+
 	function set_lastFrame(lf:Int) {
 		// Make sure we do not override lastFrame of textures set to prevent auto dispose
 		if(_lastFrame != PREVENT_AUTO_DISPOSE) {
@@ -216,9 +216,27 @@ class Texture {
 			alloc();
 	}
 
+	public function clearF( r : Float = 0., g : Float = 0., b : Float = 0., a : Float = 0., layer = -1 ) {
+		alloc();
+		if( !flags.has(Target) ) throw "Texture should be target";
+		var engine = h3d.Engine.getCurrent();
+		var color = new h3d.Vector(r,g,b,a);
+		if( layer < 0 ) {
+			for( i in 0...layerCount ) {
+				engine.pushTarget(this, i);
+				engine.clearF(color);
+				engine.popTarget();
+			}
+		} else {
+			engine.pushTarget(this, layer);
+			engine.clearF(color);
+			engine.popTarget();
+		}
+	}
+
 	public function clear( color : Int, alpha = 1., ?layer = -1 ) {
 		alloc();
-		if( flags.has(Target) #if (usegl || hlsdl || js) || true #end ) {
+		if( #if (usegl || hlsdl || js) true #else flags.has(Target) #end && (width != 1 || height != 1) ) {
 			var engine = h3d.Engine.getCurrent();
 			color |= Std.int(hxd.Math.clamp(alpha)*255) << 24;
 			if( layer < 0 ) {
