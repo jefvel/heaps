@@ -193,8 +193,8 @@ class Environment  {
 
 	public var power : Float = 1.;
 	public var rot : Float = 0.;
-	public var threshold : Float;
-	public var scale : Float;
+	public var threshold : Float = 0.;
+	public var scale : Float = 1.;
 
 	/*
 		Source can be cube map already prepared or a 2D equirectangular map that
@@ -246,15 +246,18 @@ class Environment  {
 		if( lut == null ) {
 			lut = new h3d.mat.Texture(128, 128, [Target], RGBA32F);
 			lut.setName("irradLut");
+			lut.preventAutoDispose();
 		}
 		if( diffuse == null ) {
 			diffuse = new h3d.mat.Texture(diffSize, diffSize, [Cube, Target], RGBA32F);
 			diffuse.setName("irradDiffuse");
+			diffuse.preventAutoDispose();
 		}
 		if( specular == null ) {
 			specular = new h3d.mat.Texture(specSize, specSize, [Cube, Target, MipMapped, ManualMipMapGen], RGBA32F);
 			specular.setName("irradSpecular");
 			specular.mipMap = Linear;
+			specular.preventAutoDispose();
 		}
 	}
 
