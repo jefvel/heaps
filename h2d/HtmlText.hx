@@ -1,5 +1,6 @@
 package h2d;
 
+import hxd.res.Image;
 import h2d.Text;
 
 class HtmlText extends Text {
@@ -40,7 +41,8 @@ class HtmlText extends Text {
 	}
 
 	public dynamic function loadImage( url : String ) : Tile {
-		return null;
+		var img : hxd.res.Image = hxd.Res.loader.loadCache(url, Image);
+		return img.toTile();
 	}
 
 	public dynamic function loadFont( name : String ) : Font {
@@ -341,6 +343,7 @@ class HtmlText extends Text {
 						if( prevColor == null ) prevColor = @:privateAccess glyphs.curColor.clone();
 						if( v.charCodeAt(0) == '#'.code && v.length == 4 )
 							v = "#" + v.charAt(1) + v.charAt(1) + v.charAt(2) + v.charAt(2) + v.charAt(3) + v.charAt(3);
+						trace("0x" + v.substr(1));
 						glyphs.setDefaultColor(Std.parseInt("0x" + v.substr(1)));
 					case "opacity":
 						if( prevColor == null ) prevColor = @:privateAccess glyphs.curColor.clone();
