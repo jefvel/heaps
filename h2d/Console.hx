@@ -190,9 +190,10 @@ class Console #if !macro extends h2d.Object #end {
 		tf.cursorIndex = -1;
 	}
 
+	var justOpened = false;
 	public function show() {
 		bg.visible = true;
-		tf.focus();
+		justOpened = true;
 		tf.cursorIndex = tf.text.length;
 		logIndex = -1;
 	}
@@ -218,6 +219,10 @@ class Console #if !macro extends h2d.Object #end {
 	function handleKey( e : hxd.Event ) {
 		if( !bg.visible )
 			return;
+		if ( justOpened ) {
+			return;
+		}
+
 		switch( e.keyCode ) {
 		case Key.ENTER, Key.NUMPAD_ENTER:
 			var cmd = tf.text;
@@ -420,6 +425,10 @@ class Console #if !macro extends h2d.Object #end {
 	}
 
 	override function sync(ctx:h2d.RenderContext) {
+		if (justOpened) {
+			justOpened = false;
+			tf.focus();
+		}
 		var scene = ctx.scene;
 		if( scene != null ) {
 			x = 0;
