@@ -1,5 +1,6 @@
 package h2d;
 
+import hxd.res.Image;
 import h2d.Text;
 
 enum LineHeightMode {
