@@ -10,10 +10,16 @@ package h3d.mat;
 }
 
 private typedef DefaultProps = {
+	var mode : DefaultMode;
 	var kind : DefaultKind;
 	var shadows : Bool;
 	var culling : Bool;
 	var light : Bool;
+}
+
+@:enum abstract DefaultMode(String) {
+	var Default = "default";
+	var Decal = "decal";
 }
 
 class Material extends BaseMaterial {
@@ -239,6 +245,7 @@ class Material extends BaseMaterial {
 		switch( type ) {
 		case "particles3D", "trail3D":
 			props = {
+				mode: Default,
 				kind : Alpha,
 				shadows : false,
 				culling : false,
@@ -246,13 +253,23 @@ class Material extends BaseMaterial {
 			};
 		case "ui":
 			props = {
+				mode: Default,
 				kind : Alpha,
 				shadows : false,
 				culling : false,
 				light : false,
 			};
+		case "decal":
+			props = {
+				mode: Decal,
+				kind: AlphaKill,
+				shadows: false,
+				culling: true,
+				light: true,
+			};
 		default:
 			props = {
+				mode: Default,
 				kind : Opaque,
 				shadows : true,
 				culling : true,
@@ -281,6 +298,16 @@ class Material extends BaseMaterial {
 		shadows = props.shadows;
 		if( shadows )
 			getPass("shadow").culling = mainPass.culling;
+
+		if (props.mode == Decal) {
+			mainPass.setPassName("decal");
+			var vd = mainPass.getShader(h3d.shader.VolumeDecal);
+			if( vd == null ) {
+				vd = new h3d.shader.VolumeDecal(1,1);
+				vd.setPriority(-1);
+				mainPass.addShader(vd);
+			}
+		}
 	}
 
 	#if editor
