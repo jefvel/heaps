@@ -7,9 +7,9 @@ class CustomParser extends CssValue.ValueParser {
 	function parseScale( value ) {
 		switch( value ) {
 		case VGroup([x,y]):
-			return { x : parseFloat(x), y : parseFloat(y) };
+			return { x : parseFloatPercent(x), y : parseFloatPercent(y) };
 		default:
-			var s = parseFloat(value);
+			var s = parseFloatPercent(value);
 			return { x : s, y : s };
 		}
 	}
@@ -169,7 +169,7 @@ class CustomParser extends CssValue.ValueParser {
 		case VIdent("none"):
 			return null;
 		case VGroup(vl):
-			return { dx : parseFloat(vl[0]), dy : parseFloat(vl[1]), color : vl.length >= 3 ? parseColor(vl[2]) : 0, alpha : vl.length >= 4 ? parseFloat(vl[3]) : 1 };
+			return { dx : parseFloat(vl[0]), dy : parseFloat(vl[1]), color : vl.length >= 3 ? parseColor(vl[2]) : 0, alpha : vl.length >= 4 ? parseFloatPercent(vl[3]) : 1 };
 		default:
 			return { dx : 1, dy : 1, color : parseColor(value), alpha : 1 };
 		}
@@ -207,9 +207,18 @@ class CustomParser extends CssValue.ValueParser {
 	public function parseFilter(value) : #if macro Bool #else h2d.filter.Filter #end {
 		return switch( value ) {
 		case VIdent("none"): #if macro true #else null #end;
-		case VIdent("grayed"): #if macro true #else h2d.filter.ColorMatrix.grayed() #end;
+		case VCall("grayscale",[]): #if macro true #else h2d.filter.ColorMatrix.grayed() #end;
+		case VCall("grayscale",[v]):
+			var v = parseFloatPercent(v);
+			#if macro
+				true;
+			#else
+				var f = new h2d.filter.ColorMatrix();
+				f.matrix.colorSaturate(-v);
+				f;
+			#end
 		case VCall("saturate",[v]):
-			var v = parseFloat(v);
+			var v = parseFloatPercent(v);
 			#if macro
 				true;
 			#else
@@ -226,7 +235,7 @@ class CustomParser extends CssValue.ValueParser {
 				new h2d.filter.Outline(s, c);
 			#end
 		case VCall("brightness",[v]):
-			var v = parseFloat(v);
+			var v = parseFloatPercent(v);
 			#if macro
 				true;
 			#else
@@ -510,6 +519,7 @@ class FlowComp extends ObjectComp implements domkit.Component.ComponentDecl<h2d.
 	@:p var fillWidth: Bool;
 	@:p var fillHeight: Bool;
 	@:p var overflow: Bool;
+	@:p var reverse : Bool;
 
 	@:p(align) var contentAlign : { h : h2d.Flow.FlowAlign, v : h2d.Flow.FlowAlign };
 	@:p(vAlign) var contentValign : h2d.Flow.FlowAlign;
@@ -658,6 +668,11 @@ class FlowComp extends ObjectComp implements domkit.Component.ComponentDecl<h2d.
 	static function set_overflow( o : h2d.Flow, v ) {
 		o.overflow = v;
 	}
+
+	static function set_reverse( o : h2d.Flow, v ) {
+		o.reverse = v;
+	}
+
 }
 
 @:uiComp("input")
