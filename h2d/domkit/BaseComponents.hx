@@ -542,7 +542,7 @@ class BitmapComp extends DrawableComp implements domkit.Component.ComponentDecl<
 
 	static function setTilePosY( t : h2d.Tile, y : Int ) {
 		if( t == null ) return;
-		t.setPosition(t.iy, y * t.iheight);
+		t.setPosition(t.ix, y * t.iheight);
 	}
 
 	static function set_width( o : h2d.Bitmap, v : Null<Float> ) {
@@ -621,7 +621,7 @@ class FlowComp extends ObjectComp implements domkit.Component.ComponentDecl<h2d.
 	@:p(dimension) var spacing : { x: Float, y: Float };
 	@:p var fillWidth: Bool;
 	@:p var fillHeight: Bool;
-	@:p var overflow: Bool;
+	@:p var overflow: h2d.Flow.FlowOverflow;
 	@:p var reverse : Bool;
 
 	@:p(align) var contentAlign : { h : h2d.Flow.FlowAlign, v : h2d.Flow.FlowAlign };
