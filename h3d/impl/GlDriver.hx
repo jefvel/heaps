@@ -246,10 +246,10 @@ class GlDriver extends Driver {
 		hxsl.SharedShader.UNROLL_LOOPS = !hasFeature(ShaderModel3);
 		#else
 		gl.enable(GL.TEXTURE_CUBE_MAP_SEAMLESS);
-		gl.pixelStorei(GL.PACK_ALIGNMENT, 1);
-		gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
 		gl.finish(); // prevent glError() on first bufferData
 		#end
+		gl.pixelStorei(GL.PACK_ALIGNMENT, 1);
+		gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
 	}
 
 	override function setRenderFlag( r : RenderFlag, value : Int ) {
@@ -1133,6 +1133,14 @@ class GlDriver extends Driver {
 			gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, stream);
 		#elseif js
 		var bufLen = pixels.stride * pixels.height;
+		#if hxnodejs
+		if( (pixels:Dynamic).bytes.b.hxBytes != null ) {
+			// if the pixels are a nodejs buffer, their might be GC'ed while upload !
+			// might be some problem with Node/WebGL relation
+			// let's clone the pixels in order to have a fresh JS bytes buffer
+			pixels = pixels.clone();
+		}
+		#end
 		var buffer : ArrayBufferView = switch( t.format ) {
 		case RGBA32F, R32F, RG32F, RGB32F: new Float32Array(@:privateAccess pixels.bytes.b.buffer, pixels.offset, bufLen>>2);
 		case RGBA16F, R16F, RG16F, RGB16F: new Uint16Array(@:privateAccess pixels.bytes.b.buffer, pixels.offset, bufLen>>1);
@@ -1406,6 +1414,9 @@ class GlDriver extends Driver {
 			y = 0;
 		}
 
+		if( pixels.width == 0 || pixels.height == 0 )
+			return pixels;
+
 		var old = curTarget;
 		var oldCount = numTargets;
 		var oldLayer = curTargetLayer;
@@ -1570,7 +1581,7 @@ class GlDriver extends Driver {
 
 		case MultipleRenderTargets:
 			mrtExt != null || (mrtExt = gl.getExtension('WEBGL_draw_buffers')) != null;
-			
+
 		case InstancedRendering:
 			return (glES >= 3) ? true : gl.getExtension("ANGLE_instanced_arrays") != null;
 
