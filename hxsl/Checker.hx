@@ -618,6 +618,9 @@ class Checker {
 				}
 				type = t;
 				TExprDef.TArray(e1, e2);
+			case TMat4:
+				type = TArray(TFloat, SizeDecl.SConst(4));
+				TExprDef.TArray(e1, e2);
 			default:
 				error("Cannot index " + e1.t.toString() + " : should be an array", e.pos);
 			}
