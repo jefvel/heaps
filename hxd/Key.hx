@@ -94,6 +94,10 @@ class Key {
 	public static inline var Y			= 89;
 	public static inline var Z			= 90;
 
+	public static inline var QWERTY_A_RING 	= 229;
+	public static inline var QWERTY_A_UMLAUT= 228;
+	public static inline var QWERTY_O_UMLAUT= 246;
+
 	public static inline var F1			= 112;
 	public static inline var F2			= 113;
 	public static inline var F3			= 114;
@@ -237,75 +241,135 @@ class Key {
 		}
 	}
 
+	static final keyNames = [
+		BACKSPACE => "Backspace",
+		TAB => "Tab",
+		ENTER => "Enter",
+		SHIFT => "Shift",
+		CTRL => "Ctrl",
+		ALT => "Alt",
+		ESCAPE => "Escape",
+		SPACE => "Space",
+		PGUP => "PageUp",
+		PGDOWN => "PageDown",
+		END => "End",
+		HOME => "Home",
+		LEFT => "Left",
+		UP => "Up",
+		RIGHT => "Right",
+		DOWN => "Down",
+		INSERT => "Insert",
+		DELETE => "Delete",
+		NUMPAD_MULT => "NumPad*",
+		NUMPAD_ADD => "NumPad+",
+		NUMPAD_ENTER => "NumPadEnter",
+		NUMPAD_SUB => "NumPad-",
+		NUMPAD_DOT => "NumPad.",
+		NUMPAD_DIV => "NumPad/",
+		LSHIFT => "LShift",
+		RSHIFT => "RShift",
+		LCTRL => "LCtrl",
+		RCTRL => "RCtrl",
+		LALT => "LAlt",
+		RALT => "RAlt",
+		QWERTY_TILDE => "Tilde",
+		QWERTY_MINUS => "Minus",
+		QWERTY_EQUALS => "Equals",
+		QWERTY_BRACKET_LEFT => "BracketLeft",
+		QWERTY_BRACKET_RIGHT => "BracketRight",
+		QWERTY_SEMICOLON => "Semicolon",
+		QWERTY_QUOTE => "Quote",
+		QWERTY_BACKSLASH => "Backslash",
+		QWERTY_COMMA => "Comma",
+		QWERTY_PERIOD => "Period",
+		QWERTY_SLASH => "Slash",
+		INTL_BACKSLASH => "IntlBackslash",
+		LEFT_WINDOW_KEY => "LeftWindowKey",
+		RIGHT_WINDOW_KEY => "RightWindowKey",
+		CONTEXT_MENU => "ContextMenu",
+		PAUSE_BREAK => "PauseBreak",
+		CAPS_LOCK => "CapsLock",
+		SCROLL_LOCK => "ScrollLock",
+		NUM_LOCK => "NumLock",
+		MOUSE_LEFT => "MouseLeft",
+		MOUSE_MIDDLE => "MouseMiddle",
+		MOUSE_RIGHT => "MouseRight",
+		MOUSE_BACK => "Mouse3",
+		MOUSE_FORWARD => "Mouse4",
+
+		QWERTY_A_RING => "Å",
+		QWERTY_A_UMLAUT => "Ä",
+		QWERTY_O_UMLAUT => "Ö",
+
+		NUMBER_0 => "0",
+		NUMBER_1 => "1",
+		NUMBER_2 => "2",
+		NUMBER_3 => "3",
+		NUMBER_4 => "4",
+		NUMBER_5 => "5",
+		NUMBER_6 => "6",
+		NUMBER_7 => "7",
+		NUMBER_8 => "8",
+		NUMBER_9 => "9",
+
+		NUMPAD_0 => "NumPad0",
+		NUMPAD_1 => "NumPad1",
+		NUMPAD_2 => "NumPad2",
+		NUMPAD_3 => "NumPad3",
+		NUMPAD_4 => "NumPad4",
+		NUMPAD_5 => "NumPad5",
+		NUMPAD_6 => "NumPad6",
+		NUMPAD_7 => "NumPad7",
+		NUMPAD_8 => "NumPad8",
+		NUMPAD_9 => "NumPad9",
+	];
+
+	public static function getKeyNames() {
+		var res = [];
+		for (id => name in keyNames) {
+			res.push(name.toLowerCase());
+		}
+		return res;
+	}
+	
+	public static function getKeyCode( keyName : String ) : Int {
+		if (keyName == null) {
+			return -1;
+		}
+
+		var c = keyName;
+		for (keyCode => keyName in keyNames) {
+			if (c == keyName) {
+				return keyCode;
+			}
+		}
+
+		if (c.length == 1) {
+			return c.charCodeAt(0);
+		}
+
+		if (c.length > 0 && c.length <= 3 && c.charAt(0) == "F") {
+			var fkey = Std.parseInt(c.substr(1));
+			if (fkey != null) {
+				return fkey - 1 + F1;
+			}
+		}
+
+		return -1;
+	}
+
 	public static function getKeyName( keyCode : Int ) {
 		var c = keyCode;
-		return switch( c ) {
-		case BACKSPACE: "Backspace";
-		case TAB: "Tab";
-		case ENTER: "Enter";
-		case SHIFT: "Shift";
-		case CTRL: "Ctrl";
-		case ALT: "Alt";
-		case ESCAPE: "Escape";
-		case SPACE: "Space";
-		case PGUP: "PageUp";
-		case PGDOWN: "PageDown";
-		case END: "End";
-		case HOME: "Home";
-		case LEFT: "Left";
-		case UP: "Up";
-		case RIGHT: "Right";
-		case DOWN: "Down";
-		case INSERT: "Insert";
-		case DELETE: "Delete";
-		case NUMPAD_MULT: "NumPad*";
-		case NUMPAD_ADD: "NumPad+";
-		case NUMPAD_ENTER: "NumPadEnter";
-		case NUMPAD_SUB: "NumPad-";
-		case NUMPAD_DOT: "NumPad.";
-		case NUMPAD_DIV: "NumPad/";
-		case LSHIFT: "LShift";
-		case RSHIFT: "RShift";
-		case LCTRL: "LCtrl";
-		case RCTRL: "RCtrl";
-		case LALT: "LAlt";
-		case RALT: "RAlt";
-		case QWERTY_TILDE: "Tilde";
-		case QWERTY_MINUS: "Minus";
-		case QWERTY_EQUALS: "Equals";
-		case QWERTY_BRACKET_LEFT: "BracketLeft";
-		case QWERTY_BRACKET_RIGHT: "BacketRight";
-		case QWERTY_SEMICOLON: "Semicolon";
-		case QWERTY_QUOTE: "Quote";
-		case QWERTY_BACKSLASH: "Backslash";
-		case QWERTY_COMMA: "Comma";
-		case QWERTY_PERIOD: "Period";
-		case QWERTY_SLASH: "Slash";
-		case INTL_BACKSLASH: "IntlBackslash";
-		case LEFT_WINDOW_KEY: "LeftWindowKey";
-		case RIGHT_WINDOW_KEY: "RightWindowKey";
-		case CONTEXT_MENU: "ContextMenu";
-		case PAUSE_BREAK: "PauseBreak";
-		case CAPS_LOCK: "CapsLock";
-		case SCROLL_LOCK: "ScrollLock";
-		case NUM_LOCK: "NumLock";
-		case MOUSE_LEFT: "MouseLeft";
-		case MOUSE_MIDDLE: "MouseMiddle";
-		case MOUSE_RIGHT: "MouseRight";
-		case MOUSE_BACK: "Mouse3";
-		case MOUSE_FORWARD: "Mouse4";
-		default:
-			if( c >= NUMBER_0 && c <= NUMBER_9 )
-				""+(c - NUMBER_0);
-			else if( c >= NUMPAD_0 && c <= NUMPAD_9 )
-				"NumPad"+(c - NUMPAD_0);
-			else if( c >= A && c <= Z )
-				String.fromCharCode("A".code + c - A);
-			else if( c >= F1 && c <= F24 )
-				"F" + (c - F1 + 1);
-			else
-				null;
+		if (keyNames[c] != null) {
+			return keyNames[c];
 		}
+
+		if( c >= A && c <= Z )
+			return String.fromCharCode("A".code + c - A);
+		else if( c >= F1 && c <= F24 )
+			return "F" + (c - F1 + 1);
+		else
+			return null;
 	}
 
 }
