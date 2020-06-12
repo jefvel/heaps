@@ -167,6 +167,7 @@ class Object implements hxd.impl.Serializable {
 	var absPos : h3d.Matrix;
 	var invPos : h3d.Matrix;
 	var qRot : h3d.Quat;
+	var absQRot : h3d.Quat;
 	var posChanged(get,set) : Bool;
 	var lastFrame : Int;
 
@@ -179,6 +180,7 @@ class Object implements hxd.impl.Serializable {
 		absPos.identity();
 		x = 0; y = 0; z = 0; scaleX = 1; scaleY = 1; scaleZ = 1;
 		qRot = new h3d.Quat();
+		absQRot = new h3d.Quat();
 		posChanged = false;
 		visible = true;
 		children = [];
@@ -863,6 +865,30 @@ class Object implements hxd.impl.Serializable {
 	**/
 	public function getRotationQuat() {
 		return qRot;
+	}
+
+	/**
+		Return absolute rotation of object.
+	 */
+	public function getAbsRotationQuat() {
+		syncPos();
+
+		var o = [];
+		var obj = this;
+
+		while (obj != null) {
+			o.push(obj);
+			obj = obj.parent;
+		}
+
+		absQRot.identity();
+		var l = o.length - 1;
+		while(o.length > 0) {
+			var q = o.pop();
+			absQRot.multiply(absQRot, q.qRot);
+		}
+
+		return absQRot;
 	}
 
 	/**
