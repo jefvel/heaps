@@ -181,14 +181,16 @@ class Build {
 				var pak = new hxd.fmt.pak.Reader(fs).readHeader();
 				var baseDir = pakFile.substr(0,-4);
 				function extractRec(f:hxd.fmt.pak.Data.File, dir) {
+					#if !dataOnly
+					hxd.System.timeoutTick();
+					#end
 					if( f.isDirectory ) {
 						var dir = f.name == "" ? dir : dir+"/"+f.name;
 						try sys.FileSystem.createDirectory(dir) catch( e : Dynamic ) {};
 						for( c in f.content )
 							extractRec(c,dir);
 					} else {
-						// todo : seek large
-						fs.seek(Std.int(f.dataPosition+pak.headerSize), SeekBegin);
+						hxd.fmt.pak.FileSystem.FileSeek.seek(fs,f.dataPosition+pak.headerSize,SeekBegin);
 						sys.io.File.saveBytes(dir+"/"+f.name,fs.read(f.dataSize));
 					}
 				}
