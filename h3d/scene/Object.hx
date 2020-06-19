@@ -868,25 +868,30 @@ class Object implements hxd.impl.Serializable {
 	}
 
 	/**
-		Return absolute rotation of object.
+		Return absolute, unscaled rotation of object.
 	 */
 	public function getAbsRotationQuat() {
 		syncPos();
 
-		var o = [];
-		var obj = this;
+		var mat = absPos.clone();
+		mat._41 = mat._42 = mat._43 = 0.0;
+		mat._44 = 1.0;
 
-		while (obj != null) {
-			o.push(obj);
-			obj = obj.parent;
-		}
+		var s = absPos.getScale();
 
-		absQRot.identity();
-		var l = o.length - 1;
-		while(o.length > 0) {
-			var q = o.pop();
-			absQRot.multiply(absQRot, q.qRot);
-		}
+		mat._11 /= s.x;
+		mat._21 /= s.y;
+		mat._31 /= s.z;
+
+		mat._12 /= s.x;
+		mat._22 /= s.y;
+		mat._32 /= s.z;
+
+		mat._13 /= s.x;
+		mat._23 /= s.y;
+		mat._33 /= s.z;
+
+		absQRot.initRotateMatrix(mat);
 
 		return absQRot;
 	}
