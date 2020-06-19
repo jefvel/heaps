@@ -188,7 +188,7 @@ class GlDriver extends Driver {
 			gl = cast canvas.getContextWebGL(options);
 		if( gl == null ) throw "Could not acquire GL context";
 		// debug if webgl_debug.js is included
-		if( js.Syntax.code('typeof')(untyped WebGLDebugUtils) != "undefined" ) {
+		if( js.Syntax.typeof(untyped WebGLDebugUtils) != "undefined" ) {
 			gl = untyped WebGLDebugUtils.makeDebugContext(gl);
 			glDebug = true;
 		}
@@ -337,7 +337,12 @@ class GlDriver extends Driver {
 		var t = shader.textures;
 		while( t != null ) {
 			var tt = t.type;
-			if( tt.match(TChannel(_)) ) tt = TSampler2D;
+			var count = 1;
+			switch( tt ) {
+			case TChannel(_): tt = TSampler2D;
+			case TArray(t,SConst(n)): tt = t; count = n;
+			default:
+			}
 			if( tt != curT ) {
 				curT = tt;
 				name = switch( tt ) {
@@ -348,8 +353,10 @@ class GlDriver extends Driver {
 				}
 				index = 0;
 			}
-			s.textures.push({ u : gl.getUniformLocation(p.p, prefix+name+"["+index+"]"), t : curT, mode : mode });
-			index++;
+			for( i in 0...count ) {
+				s.textures.push({ u : gl.getUniformLocation(p.p, prefix+name+"["+index+"]"), t : curT, mode : mode });
+				index++;
+			}
 			t = t.next;
 		}
 		if( shader.bufferCount > 0 ) {
