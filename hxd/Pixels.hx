@@ -29,14 +29,18 @@ abstract PixelsARGB(Pixels) to Pixels {
 @:access(hxd.Pixels)
 abstract PixelsFloat(Pixels) to Pixels {
 
-	public inline function getPixelF(x, y) {
+	public inline function getPixelF(x, y, ?v:h3d.Vector) {
+		if( v == null )
+			v = new h3d.Vector();
 		switch(this.format) {
 			case R32F:
 				var pix = ((x + y * this.width) << 2) + this.offset;
-				return new h3d.Vector(this.bytes.getFloat(pix));
+				v.set(this.bytes.getFloat(pix),0,0,0);
+				return v;
 			case RGBA32F:
 				var pix = ((x + y * this.width) << 4) + this.offset;
-				return new h3d.Vector(this.bytes.getFloat(pix),this.bytes.getFloat(pix+4),this.bytes.getFloat(pix+8),this.bytes.getFloat(pix+12));
+				v.set(this.bytes.getFloat(pix), this.bytes.getFloat(pix+4), this.bytes.getFloat(pix+8), this.bytes.getFloat(pix+12));
+				return v;
 			default:
 				this.invalidFormat();
 				return null;
@@ -70,11 +74,11 @@ abstract PixelsFloat(Pixels) to Pixels {
 		this.willChange();
 		var bytes : hxd.impl.UncheckedBytes = this.bytes;
 		switch( [this.format, target] ) {
-	
+
 		case [RGBA32F, R32F]:
 			var nbytes = haxe.io.Bytes.alloc(this.height * this.width * 4);
 			var out : hxd.impl.UncheckedBytes = nbytes;
-			for( i in 0 ... this.width * this.height ) 
+			for( i in 0 ... this.width * this.height )
 				nbytes.setFloat(i << 2, this.bytes.getFloat(i << 4));
 			this.bytes = nbytes;
 
@@ -379,6 +383,27 @@ class Pixels {
 				out[i] = bytes[i << 2];
 			this.bytes = nbytes;
 
+		case [R32F, RGBA|BGRA]:
+			var fbytes = this.bytes;
+			var p = 0;
+			for( i in 0...width*height ) {
+				var v = Std.int(fbytes.getFloat(p)*255);
+				if( v < 0 ) v = 0 else if( v > 255 ) v = 255;
+				bytes[p++] = v;
+				bytes[p++] = v;
+				bytes[p++] = v;
+				bytes[p++] = 0xFF;
+			}
+
+		case [R16U, R32F]:
+			var nbytes = haxe.io.Bytes.alloc(width * height * 4);
+			var fbytes = this.bytes;
+			for( i in 0...width*height ) {
+				var nv = fbytes.getUInt16(i << 1);
+				nbytes.setFloat(i << 2, nv / 65535.0);
+			}
+			this.bytes = nbytes;
+
 		case [S3TC(a),S3TC(b)] if( a == b ):
 			// nothing
 
@@ -468,16 +493,16 @@ class Pixels {
 	public static function calcStride( width : Int, format : PixelFormat ) {
 		return width * switch( format ) {
 		case ARGB, BGRA, RGBA, SRGB, SRGB_ALPHA: 4;
-		case RGBA16F: 8;
+		case RGBA16U, RGBA16F: 8;
 		case RGBA32F: 16;
 		case R8: 1;
-		case R16F: 2;
+		case R16U, R16F: 2;
 		case R32F: 4;
 		case RG8: 2;
 		case RG16F: 4;
 		case RG32F: 8;
 		case RGB8: 3;
-		case RGB16F: 6;
+		case RGB16U, RGB16F: 6;
 		case RGB32F: 12;
 		case RGB10A2: 4;
 		case RG11B10UF: 4;
@@ -496,12 +521,12 @@ class Pixels {
 	**/
 	public static function getChannelOffset( format : PixelFormat, channel : Channel ) {
 		return switch( format ) {
-		case R8, R16F, R32F:
+		case R8, R16F, R32F, R16U:
 			if( channel == R ) 0 else -1;
 		case RG8, RG16F, RG32F:
 			var p = calcStride(1,format);
 			[0, p, -1, -1][channel.toInt()];
-		case RGB8, RGB16F, RGB32F:
+		case RGB8, RGB16F, RGB32F, RGB16U:
 			var p = calcStride(1,format);
 			[0, p, p<<1, -1][channel.toInt()];
 		case ARGB:
@@ -510,7 +535,7 @@ class Pixels {
 			[2, 1, 0, 3][channel.toInt()];
 		case RGBA, SRGB, SRGB_ALPHA:
 			channel.toInt();
-		case RGBA16F:
+		case RGBA16F, RGBA16U:
 			channel.toInt() * 2;
 		case RGBA32F:
 			channel.toInt() * 4;
