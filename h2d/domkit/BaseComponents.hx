@@ -256,7 +256,9 @@ class CustomParser extends CssValue.ValueParser {
 			#if macro
 				true;
 			#else
-				new h2d.filter.Outline(s, c);
+				var f = new h2d.filter.Outline(s, c);
+				f.alpha = (c >>> 24) / 255;
+				f;
 			#end
 		case VCall("brightness",[v]):
 			var v = parseFloatPercent(v);
@@ -279,6 +281,20 @@ class CustomParser extends CssValue.ValueParser {
 			#else
 				new h2d.filter.Glow(c, a, r, g, q, b);
 			#end
+		case VCall("blur",[r]):
+			var r = parseFloat(r);
+			#if macro
+				true;
+			#else
+				new h2d.filter.Blur(r);
+			#end
+		case VGroup(vl):
+			var fl = [for( v in vl ) parseFilter(v)];
+			#if macro
+				true;
+			#else
+				new h2d.filter.Group(fl);
+			#end
 		default: invalidProp();
 		}
 	}
@@ -287,27 +303,30 @@ class CustomParser extends CssValue.ValueParser {
 		if( value.match(VIdent("none")) )
 			return null;
 		var adj : h3d.Matrix.ColorAdjust = {};
-		switch( value ) {
-		case VGroup(vl):
-			var i = 0;
-			while( i < vl.length ) {
-				if( vl.length - i < 2 ) invalidProp();
-				switch( vl[i++] ) {
-				case VIdent("hue"):
-					adj.hue = parseFloat(vl[i++]) * Math.PI / 180;
-				case VIdent("contrast"):
-					adj.contrast = parseFloat(vl[i++]);
-				case VIdent("gain"):
-					if( vl.length - i < 2 ) invalidProp();
-					adj.gain = { color : parseColor(vl[i++]), alpha : parseFloat(vl[i++]) };
-				case VIdent("lightness"):
-					adj.lightness = parseFloat(vl[i++]);
-				case VIdent("saturation"):
-					adj.saturation = parseFloat(vl[i++]);
+
+		inline function parseVal(vcall: CssValue) {
+			switch(vcall) {
+				case VCall("hue-rotate", [v]):
+					adj.hue = parseFloat(v) * Math.PI / 180;
+				case VCall("contrast", [v]):
+					adj.contrast = parseFloat(v);
+				case VCall("gain", [c, a]):
+					adj.gain = { color : parseColor(c), alpha : parseFloat(a) };
+				case VCall("brightness",[v]):
+					adj.lightness = parseFloat(v);
+				case VCall("saturate",[v]):
+					adj.saturation = parseFloat(v);
 				default:
 					invalidProp();
-				}
 			}
+		}
+
+		switch( value ) {
+		case VGroup(vcalls):
+			for(vcall in vcalls)
+				parseVal(vcall);
+		case VCall(_):
+			parseVal(value);
 		default:
 			invalidProp();
 		}

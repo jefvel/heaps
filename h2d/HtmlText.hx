@@ -3,6 +3,9 @@ package h2d;
 import hxd.res.Image;
 import h2d.Text;
 
+/**
+	The `HtmlText` line height calculation rules.
+**/
 enum LineHeightMode {
 	/**
 		Accurate line height calculations. Each line will adjust it's height according to it's contents.
@@ -13,11 +16,34 @@ enum LineHeightMode {
 	**/
 	TextOnly;
 	/**
-		Legacy line height mode. When used, line heights are remain constant based on `HtmlText.font` variable.
+		Legacy line height mode. When used, line heights remain constant based on `Text.font` variable.
 	**/
 	Constant;
 }
 
+/**
+	`HtmlText` img tag vertical alignment rules.
+**/
+enum ImageVerticalAlign {
+	/**
+		Align images along the top of the text line.
+	**/
+	Top;
+	/**
+		Align images to sit on the base line of the text.
+	**/
+	Bottom;
+	/**
+		Align images to the middle between the top of the text line its base line.
+	**/
+	Middle;
+}
+
+/**
+	A simple HTML text renderer.
+
+	See the [Text](https://github.com/HeapsIO/heaps/wiki/Text) section of the manual for more details and a list of the supported HTML tags.
+**/
 class HtmlText extends Text {
 
 	/**
@@ -35,23 +61,32 @@ class HtmlText extends Text {
 	}
 
 	/**
-		A default method HtmlText uses to format assigned text.
+		A default method HtmlText uses to format assigned text. See `HtmlText.formatText` for details.
 	**/
 	public static dynamic function defaultFormatText( text : String ) : String {
 		return text;
 	}
 
+	/**
+		When enabled, condenses extra spaces (carriage-return, line-feed, tabulation and space character) to one space.
+		If not set, uncondensed whitespace is left as is, as well as line-breaks.
+	**/
 	public var condenseWhite(default,set) : Bool = true;
 	/**
-		Spacing after <img> tags in pixels.
+		The spacing after `<img>` tags in pixels.
 	**/
 	public var imageSpacing(default,set):Float = 1;
 
 	/**
-		Line height calculation mode controls how much space lines take up vertically. ( default : Accurate )
-		Changing mode to `Constant` restores legacy behavior of HtmlText.
+		Line height calculation mode controls how much space lines take up vertically.
+		Changing mode to `Constant` restores the legacy behavior of HtmlText.
 	**/
 	public var lineHeightMode(default,set) : LineHeightMode = Accurate;
+
+	/**
+		Vertical alignment of the images in `<img>` tag relative to the text.
+	**/
+	public var imageVerticalAlign(default,set) : ImageVerticalAlign = Bottom;
 
 	var elements : Array<Object> = [];
 	var xPos : Float;
@@ -63,6 +98,8 @@ class HtmlText extends Text {
 	var dropMatrix : h3d.shader.ColorMatrix;
 	var prevChar : Int;
 	var newLine : Bool;
+	var aHrefs : Array<String>;
+	var aInteractive : Interactive;
 
 	override function draw(ctx:RenderContext) {
 		if( dropShadow != null ) {
@@ -88,9 +125,10 @@ class HtmlText extends Text {
 	}
 
 	/**
-		Method that should return `h2d.Tile` instance for `<img>` tags. By default calls `HtmlText.defaultLoadImage` method.
+		Method that should return an `h2d.Tile` instance for `<img>` tags. By default calls `HtmlText.defaultLoadImage` method.
+
 		HtmlText does not cache tile instances.
-		Due to internal structure, method should be determenistic and always return same Tile on consequent calls with same `url` input.
+		Due to internal structure, method should be deterministic and always return same Tile on consequent calls with same `url` input.
 		@param url A value contained in `src` attribute.
 	**/
 	public dynamic function loadImage( url : String ) : Tile {
@@ -98,9 +136,10 @@ class HtmlText extends Text {
 	}
 
 	/**
-		Method that should return `h2d.Font` instance for `<font>` tags with `face` attribute. By default calls `HtmlText.defaultLoadFont` method.
+		Method that should return an `h2d.Font` instance for `<font>` tags with `face` attribute. By default calls `HtmlText.defaultLoadFont` method.
+
 		HtmlText does not cache font instances and it's recommended to perform said caching from outside.
-		Due to internal structure, method should be determenistic and always return same Font instance on consequent calls with same `name` input.
+		Due to internal structure, method should be deterministic and always return same Font instance on consequent calls with same `name` input.
 		@param name A value contained in `face` attribute.
 		@returns Method should return loaded font instance or `null`. If `null` is returned - currently active font is used.
 	**/
@@ -110,6 +149,15 @@ class HtmlText extends Text {
 		else return f;
 	}
 
+	/**
+		Called on a <a> tag click
+	**/
+	public dynamic function onHyperlink(url:String) : Void {
+	}
+
+	/**
+		Called when text is assigned, allowing to process arbitrary text to a valid XHTML.
+	**/
 	public dynamic function formatText( text : String ) : String {
 		return defaultFormatText(text);
 	}
@@ -288,9 +336,17 @@ class HtmlText extends Text {
 					info.width = size;
 					if ( lineHeightMode == Accurate ) {
 						var grow = i.height - i.dy - info.baseLine;
-						if ( grow > 0 ) {
-							info.baseLine += grow;
-							info.height += grow;
+						if(grow > 0) {
+							switch(imageVerticalAlign) {
+								case Top:
+									info.height += grow;
+								case Bottom:
+									info.baseLine += grow;
+									info.height += grow;
+								case Middle:
+									info.height += grow;
+									info.baseLine += Std.int(grow/2);
+							}
 						}
 						grow = info.baseLine + i.dy;
 						if ( info.height < grow ) info.height = grow;
@@ -336,7 +392,8 @@ class HtmlText extends Text {
 				var g = font.getChar(cc);
 				var newline = cc == '\n'.code;
 				var esize = g.width + g.getKerningOffset(prevChar);
-				if ( font.charset.isBreakChar(cc) ) {
+				var nc = text.charCodeAt(i+1);
+				if ( font.charset.isBreakChar(cc) && (nc == null || !font.charset.isComplementChar(nc) )) {
 					// Case: Very first word in text makes the line too long hence we want to start it off on a new line.
 					if (x > maxWidth && textSplit.length == 0 && splitNode.node != null) {
 						metrics.push(makeLineInfo(x, info.height, info.baseLine));
@@ -352,7 +409,8 @@ class HtmlText extends Text {
 						var e = font.getChar(cc);
 						size += e.width + letterSpacing + e.getKerningOffset(prevChar);
 						prevChar = cc;
-						if ( font.charset.isBreakChar(cc) ) break;
+						var nc = text.charCodeAt(k+1);
+						if ( font.charset.isBreakChar(cc) && (nc == null || !font.charset.isComplementChar(nc)) ) break;
 					}
 					// Avoid empty line when last char causes line-break while being CJK
 					if ( size > maxWidth && i != max - 1 ) {
@@ -513,11 +571,33 @@ class HtmlText extends Text {
 	}
 
 	function addNode( e : Xml, font : Font, align : Align, rebuild : Bool, metrics : Array<LineInfo> ) {
+		inline function createInteractive() {
+			if(aHrefs == null || aHrefs.length == 0)
+				return;
+			aInteractive = new Interactive(0, metrics[sizePos].height, this);
+			var href = aHrefs[aHrefs.length-1];
+			aInteractive.onClick = function(event) {
+				onHyperlink(href);
+			}
+			aInteractive.x = xPos;
+			aInteractive.y = yPos;
+			elements.push(aInteractive);
+		}
+
+		inline function finalizeInteractive() {
+			if(aInteractive != null) {
+				aInteractive.width = xPos - aInteractive.x;
+				aInteractive = null;
+			}
+		}
+
 		inline function makeLineBreak()
 		{
+			finalizeInteractive();
 			if( xPos > xMax ) xMax = xPos;
 			yPos += metrics[sizePos].height + lineSpacing;
 			nextLine(align, metrics[++sizePos].width);
+			createInteractive();
 		}
 		if( e.nodeType == Xml.Element ) {
 			var prevColor = null, prevGlyphs = null;
@@ -601,7 +681,14 @@ class HtmlText extends Text {
 			case "img":
 				var i : Tile = loadImage(e.get("src"));
 				if ( i == null ) i = Tile.fromColor(0xFF00FF, 8, 8);
-				var py = yPos + metrics[sizePos].baseLine - i.height;
+				var py = yPos;
+				switch(imageVerticalAlign) {
+					case Bottom:
+						py += metrics[sizePos].baseLine - i.height;
+					case Middle:
+						py += metrics[sizePos].baseLine - i.height/2;
+					case Top:
+				}
 				if( py + i.dy < calcYMin )
 					calcYMin = py + i.dy;
 				if( rebuild ) {
@@ -613,6 +700,14 @@ class HtmlText extends Text {
 				newLine = false;
 				prevChar = -1;
 				xPos += i.width + imageSpacing;
+			case "a":
+				if( e.exists("href") ) {
+					finalizeInteractive();
+					if( aHrefs == null )
+						aHrefs = [];
+					aHrefs.push(e.get("href"));
+					createInteractive();
+				}
 			default:
 			}
 			for( child in e )
@@ -627,6 +722,12 @@ class HtmlText extends Text {
 					makeLineBreak();
 					newLine = true;
 					prevChar = -1;
+				}
+			case "a":
+				if( aHrefs.length > 0 ) {
+					finalizeInteractive();
+					aHrefs.pop();
+					createInteractive();
 				}
 			default:
 			}
@@ -680,6 +781,14 @@ class HtmlText extends Text {
 			rebuild();
 		}
 		return value;
+	}
+
+	function set_imageVerticalAlign(align) {
+		if ( this.imageVerticalAlign != align ) {
+			this.imageVerticalAlign = align;
+			rebuild();
+		}
+		return align;
 	}
 
 	function set_lineHeightMode(v) {
