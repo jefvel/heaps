@@ -3,6 +3,9 @@ package h2d;
 import hxd.res.Image;
 import h2d.Text;
 
+/**
+	The `HtmlText` line height calculation rules.
+**/
 enum LineHeightMode {
 	/**
 		Accurate line height calculations. Each line will adjust it's height according to it's contents.
@@ -13,17 +16,34 @@ enum LineHeightMode {
 	**/
 	TextOnly;
 	/**
-		Legacy line height mode. When used, line heights are remain constant based on `HtmlText.font` variable.
+		Legacy line height mode. When used, line heights remain constant based on `Text.font` variable.
 	**/
 	Constant;
 }
 
+/**
+	`HtmlText` img tag vertical alignment rules.
+**/
 enum ImageVerticalAlign {
+	/**
+		Align images along the top of the text line.
+	**/
 	Top;
+	/**
+		Align images to sit on the base line of the text.
+	**/
 	Bottom;
+	/**
+		Align images to the middle between the top of the text line its base line.
+	**/
 	Middle;
 }
 
+/**
+	A simple HTML text renderer.
+
+	See the [Text](https://github.com/HeapsIO/heaps/wiki/Text) section of the manual for more details and a list of the supported HTML tags.
+**/
 class HtmlText extends Text {
 
 	/**
@@ -41,26 +61,30 @@ class HtmlText extends Text {
 	}
 
 	/**
-		A default method HtmlText uses to format assigned text.
+		A default method HtmlText uses to format assigned text. See `HtmlText.formatText` for details.
 	**/
 	public static dynamic function defaultFormatText( text : String ) : String {
 		return text;
 	}
 
+	/**
+		When enabled, condenses extra spaces (carriage-return, line-feed, tabulation and space character) to one space.
+		If not set, uncondensed whitespace is left as is, as well as line-breaks.
+	**/
 	public var condenseWhite(default,set) : Bool = true;
 	/**
-		Spacing after <img> tags in pixels.
+		The spacing after `<img>` tags in pixels.
 	**/
 	public var imageSpacing(default,set):Float = 1;
 
 	/**
-		Line height calculation mode controls how much space lines take up vertically. ( default : Accurate )
-		Changing mode to `Constant` restores legacy behavior of HtmlText.
+		Line height calculation mode controls how much space lines take up vertically.
+		Changing mode to `Constant` restores the legacy behavior of HtmlText.
 	**/
 	public var lineHeightMode(default,set) : LineHeightMode = Accurate;
 
 	/**
-		Vertical alignement of the image related to the text
+		Vertical alignment of the images in `<img>` tag relative to the text.
 	**/
 	public var imageVerticalAlign(default,set) : ImageVerticalAlign = Bottom;
 
@@ -101,9 +125,10 @@ class HtmlText extends Text {
 	}
 
 	/**
-		Method that should return `h2d.Tile` instance for `<img>` tags. By default calls `HtmlText.defaultLoadImage` method.
+		Method that should return an `h2d.Tile` instance for `<img>` tags. By default calls `HtmlText.defaultLoadImage` method.
+
 		HtmlText does not cache tile instances.
-		Due to internal structure, method should be determenistic and always return same Tile on consequent calls with same `url` input.
+		Due to internal structure, method should be deterministic and always return same Tile on consequent calls with same `url` input.
 		@param url A value contained in `src` attribute.
 	**/
 	public dynamic function loadImage( url : String ) : Tile {
@@ -111,9 +136,10 @@ class HtmlText extends Text {
 	}
 
 	/**
-		Method that should return `h2d.Font` instance for `<font>` tags with `face` attribute. By default calls `HtmlText.defaultLoadFont` method.
+		Method that should return an `h2d.Font` instance for `<font>` tags with `face` attribute. By default calls `HtmlText.defaultLoadFont` method.
+
 		HtmlText does not cache font instances and it's recommended to perform said caching from outside.
-		Due to internal structure, method should be determenistic and always return same Font instance on consequent calls with same `name` input.
+		Due to internal structure, method should be deterministic and always return same Font instance on consequent calls with same `name` input.
 		@param name A value contained in `face` attribute.
 		@returns Method should return loaded font instance or `null`. If `null` is returned - currently active font is used.
 	**/
@@ -129,6 +155,9 @@ class HtmlText extends Text {
 	public dynamic function onHyperlink(url:String) : Void {
 	}
 
+	/**
+		Called when text is assigned, allowing to process arbitrary text to a valid XHTML.
+	**/
 	public dynamic function formatText( text : String ) : String {
 		return defaultFormatText(text);
 	}
@@ -773,7 +802,7 @@ class HtmlText extends Text {
 	override function getBoundsRec( relativeTo : Object, out : h2d.col.Bounds, forSize : Bool ) {
 		if( forSize )
 			for( i in elements )
-				if( Std.is(i,h2d.Bitmap) )
+				if( hxd.impl.Api.is(i,h2d.Bitmap) )
 					i.visible = false;
 		super.getBoundsRec(relativeTo, out, forSize);
 		if( forSize )
