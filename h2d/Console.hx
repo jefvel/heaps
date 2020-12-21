@@ -146,7 +146,7 @@ class Console #if !macro extends h2d.Object #end {
 	}
 
 	#end
-	
+
 	/**
 		Add a new command to console. <span class="label">Macro method</span>
 
