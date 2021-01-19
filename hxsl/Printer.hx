@@ -62,6 +62,7 @@ class Printer {
 				case Ignore: "ignore";
 				case PerInstance(n): "perInstance("+n+")";
 				case Doc(s): "doc(\"" + StringTools.replace(s, '"', '\\"') + "\")";
+				case Borrow(s): "borrow(" + s + ")";
 				}) + " ");
 		}
 		if( v.kind != defKind )
@@ -238,6 +239,7 @@ class Printer {
 			case OpNegBits:"~";
 			case OpIncrement:"++";
 			case OpDecrement:"--";
+			default: throw "assert"; // OpSpread for Haxe4.2+
 			});
 			addExpr(e, tabs);
 		case TBinop(op, e1, e2):

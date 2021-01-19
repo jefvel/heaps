@@ -812,6 +812,8 @@ class Checker {
 					default:
 						error("Precision qualifier not supported on " + v.type, pos);
 					}
+				case Borrow(source):
+					if ( v.kind != Local ) error("Borrow should not have a type qualifier", pos);
 				case Ignore, Doc(_):
 				}
 		}
@@ -940,7 +942,7 @@ class Checker {
 		case TInt: stype = VInt; 1;
 		case TBool: stype = VBool; 1;
 		case TVec(size, t): stype = t; size;
-		case TBytes(size): stype = VInt; size;
+		case TBytes(size): stype = VFloat; size;
 		default: stype = null; 0;
 		}
 		if( ncomps > 0 && f.length <= 4 ) {

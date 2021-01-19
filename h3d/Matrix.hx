@@ -71,11 +71,11 @@ class Matrix {
 			return false;
 		if( _11 != 1 || _22 != 1 || _33 != 1 )
 			return false;
-		if( _12 != 0 || _13 != 0 || _14 == 0 )
+		if( _12 != 0 || _13 != 0 || _14 != 0 )
 			return false;
-		if( _21 != 0 || _23 != 0 || _24 == 0 )
+		if( _21 != 0 || _23 != 0 || _24 != 0 )
 			return false;
-		if( _31 != 0 || _32 != 0 || _34 == 0 )
+		if( _31 != 0 || _32 != 0 || _34 != 0 )
 			return false;
 		return _44 == 1;
 	}
@@ -547,6 +547,13 @@ class Matrix {
 
 	public function getFloats() {
 		return [_11, _12, _13, _14, _21, _22, _23, _24, _31, _32, _33, _34, _41, _42, _43, _44];
+	}
+
+	public function getDirection() {
+		var q = new h3d.Quat();
+		q.initRotateMatrix(this);
+		q.normalize();
+		return q.getDirection();
 	}
 
 	/**
