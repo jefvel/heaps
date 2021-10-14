@@ -165,10 +165,6 @@ class Key {
 	public static inline var LALT = ALT | LOC_LEFT;
 	public static inline var RALT = ALT | LOC_RIGHT;
 
-	#if noEngine
-	public static var frameCount = 0;
-	#end
-
 	static var initDone = false;
 	static var keyPressed : Array<Int> = [];
 
@@ -185,7 +181,7 @@ class Key {
 	}
 
 	public static inline function getFrame() {
-		return hxd.Timer.frameCount + 1;
+		return hxd.Timer.frameCount + 2;
 	}
 
 	public static function isPressed( code : Int ) {
@@ -235,6 +231,8 @@ class Key {
 			if( e.button < 5 ) keyPressed[e.button] = getFrame();
 		case ERelease:
 			if( e.button < 5 ) keyPressed[e.button] = -getFrame();
+		case EReleaseOutside:
+			keyPressed = [];
 		case EWheel:
 			keyPressed[e.wheelDelta > 0 ? MOUSE_WHEEL_DOWN : MOUSE_WHEEL_UP] = getFrame();
 		default:

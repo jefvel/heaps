@@ -608,10 +608,12 @@ class Flow extends Object {
 				var pushed = false;
 				scrollBar.interactive.cursor = Button;
 				scrollBar.interactive.onPush = function(e:hxd.Event) {
+					var scene = getScene();
+					if( scene == null ) return;
 					scrollBar.interactive.startCapture(function(e) {
 						switch( e.kind ) {
 						case ERelease, EReleaseOutside:
-							scrollBar.interactive.stopCapture();
+							scene.stopCapture();
 						case EPush, EMove:
 							setCursor(e);
 						default:
@@ -886,9 +888,13 @@ class Flow extends Object {
 
 	override function removeChildren() {
 		var k = 0;
-		while( numChildren>k ) {
+
+		while( numChildren > k ) {
 			var c = getChildAt(k);
-			if( c == background || c == interactive || c == debugGraphics ) k++; else removeChild(c);
+			if( c == background
+				|| c == interactive
+				|| c == debugGraphics
+				|| c == scrollBar ) k++; else removeChild(c);
 		}
 	}
 
@@ -1011,10 +1017,10 @@ class Flow extends Object {
 	}
 
 	function onMouseWheel( e : hxd.Event ) {
-		if( overflow == Scroll )
+		if( overflow == Scroll ) {
 			scrollPosY += e.wheelDelta * scrollWheelSpeed;
-		else
-			e.propagate = true;
+			e.propagate = false;
+		}
 	}
 
 	function set_backgroundTile(t) {
@@ -1089,6 +1095,7 @@ class Flow extends Object {
 	**/
 	public function reflow() {
 		onBeforeReflow();
+		syncPos();
 
 		if( !isConstraint && (fillWidth || fillHeight) ) {
 			var scene = getScene();
@@ -1103,6 +1110,18 @@ class Flow extends Object {
 		var borderBottom = #if flow_border borderBottom #else 0 #end;
 		var borderLeft = #if flow_border borderLeft #else 0 #end;
 		var borderRight = #if flow_border borderRight #else 0 #end;
+		var tmpBounds = tmpBounds;
+
+		if( tmpBounds == null ) throw "Recursive reflow";
+		this.tmpBounds = null;
+
+		inline function getSize(c:h2d.Object) {
+			var b = tmpBounds;
+			b.empty();
+			c.getBoundsRec(this, b, true);
+			if( b.isEmpty() ) b.addPos(0,0) else b.offset(-c.x, -c.y);
+			return b;
+		}
 
 		var isConstraintWidth = realMaxWidth >= 0;
 		var isConstraintHeight = realMaxHeight >= 0;
@@ -1142,6 +1161,7 @@ class Flow extends Object {
 					maxLineHeight = minLineHeight;
 				else if( overflow != Expand && minLineHeight != 0 )
 					maxLineHeight = minLineHeight;
+				var absHeight = maxLineHeight > maxInHeight && overflow != Expand ? maxInHeight : maxLineHeight;
 				for( i in lastIndex...maxIndex ) {
 					var p = propAt(i);
 					if( p.isAbsolute && p.verticalAlign == null ) continue;
@@ -1149,11 +1169,12 @@ class Flow extends Object {
 					if( !c.visible ) continue;
 					var a = p.verticalAlign != null ? p.verticalAlign : valign;
 					c.y = y + p.offsetY + p.paddingTop;
+					var height = p.isAbsolute ? absHeight : maxLineHeight;
 					switch( a ) {
 					case Bottom:
-						c.y += maxLineHeight - Std.int(p.calculatedHeight);
+						c.y += height - Std.int(p.calculatedHeight);
 					case Middle:
-						c.y += Std.int((maxLineHeight - p.calculatedHeight) * 0.5);
+						c.y += Std.int((height - p.calculatedHeight) * 0.5);
 					default:
 					}
 				}
@@ -1186,7 +1207,7 @@ class Flow extends Object {
 						isConstraintHeight && p.constraint ? (maxInHeight - ph) / Math.abs(c.scaleX) : -1
 					);
 
-				var b = c.getSize(tmpBounds);
+				var b = getSize(c);
 				var br = false;
 				p.calculatedWidth = Math.ceil(b.xMax) + pw;
 				p.calculatedHeight = Math.ceil(b.yMax) + ph;
@@ -1287,6 +1308,7 @@ class Flow extends Object {
 					maxColWidth = minColWidth;
 				else if( overflow != Expand && minColWidth != 0 )
 					maxColWidth = minColWidth;
+				var absWidth = maxColWidth > maxInWidth && overflow != Expand ? maxInWidth : maxColWidth;
 				for( i in lastIndex...maxIndex ) {
 					var p = propAt(i);
 					if( p.isAbsolute && p.horizontalAlign == null ) continue;
@@ -1294,11 +1316,12 @@ class Flow extends Object {
 					if( !c.visible ) continue;
 					var a = p.horizontalAlign != null ? p.horizontalAlign : halign;
 					c.x = x + p.offsetX + p.paddingLeft;
+					var width = p.isAbsolute ? absWidth : maxColWidth;
 					switch( a ) {
 					case Right:
-						c.x += maxColWidth - p.calculatedWidth;
+						c.x += width - p.calculatedWidth;
 					case Middle:
-						c.x += Std.int((maxColWidth - p.calculatedWidth) * 0.5);
+						c.x += Std.int((width - p.calculatedWidth) * 0.5);
 					default:
 					}
 				}
@@ -1332,7 +1355,7 @@ class Flow extends Object {
 						isConstraintHeight && p.constraint ? (maxInHeight - ph) / Math.abs(c.scaleY) : -1
 					);
 
-				var b = c.getSize(tmpBounds);
+				var b = getSize(c);
 				var br = false;
 
 				p.calculatedWidth = Math.ceil(b.xMax) + pw;
@@ -1440,7 +1463,7 @@ class Flow extends Object {
 						isConstraintHeight && p.constraint ? (maxInHeight - ph) / Math.abs(c.scaleY) : -1
 					);
 
-				var b = c.getSize(tmpBounds);
+				var b = getSize(c);
 				p.calculatedWidth = Math.ceil(b.xMax) + pw;
 				p.calculatedHeight = Math.ceil(b.yMax) + ph;
 				if( p.minWidth != null && p.calculatedWidth < p.minWidth ) p.calculatedWidth = p.minWidth;
@@ -1563,6 +1586,7 @@ class Flow extends Object {
 			debugGraphics.drawRect(0, 0, cw, ch);
 		}
 
+		this.tmpBounds = tmpBounds;
 		onAfterReflow();
 	}
 

@@ -55,7 +55,7 @@ class Convert {
 		#end
 	}
 
-	static var converts = new Map<String,Array<Convert>>();
+	@:persistent static var converts = new Map<String,Array<Convert>>();
 	public static function register( c : Convert ) : Int {
 		var dest = converts.get(c.destExt);
 		if( dest == null ) {
@@ -78,6 +78,16 @@ class ConvertFBX2HMD extends Convert {
 	override function convert() {
 		var fbx = try hxd.fmt.fbx.Parser.parse(srcBytes) catch( e : Dynamic ) throw Std.string(e) + " in " + srcPath;
 		var hmdout = new hxd.fmt.fbx.HMDOut(srcPath);
+		if( params != null ) {
+			if( params.normals )
+				hmdout.generateNormals = true;
+			if( params.precise ) {
+				hmdout.highPrecision = true;
+				hmdout.fourBonesByVertex = true;
+			}
+			if( params.maxBones != null)
+				hmdout.maxBonesPerSkin = params.maxBones;
+		}
 		hmdout.load(fbx);
 		var isAnim = StringTools.startsWith(originalFilename, "Anim_") || originalFilename.toLowerCase().indexOf("_anim_") > 0;
 		var hmd = hmdout.toHMD(null, !isAnim);
@@ -229,6 +239,7 @@ class CompressIMG extends Convert {
 		"RGB32F" => "R32G32B32_FLOAT",
 		"RGBA16F" => "R16G16B16A16_FLOAT",
 		"RGBA32F" => "R32G32B32A32_FLOAT",
+		"RGBA" => "R8G8B8A8_UNORM",
 	];
 
 	override function convert() {

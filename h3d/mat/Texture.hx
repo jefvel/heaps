@@ -40,6 +40,7 @@ class Texture {
 	public var layerCount(get, never) : Int;
 	public var lodBias : Float = 0.;
 	public var mipLevels(get, never) : Int;
+	var customMipLevels : Int;
 
 	/**
 		If this callback is set, the texture can be re-allocated when the 3D context has been lost or when
@@ -71,6 +72,8 @@ class Texture {
 	function get_mipLevels() {
 		if( !flags.has(MipMapped) )
 			return 1;
+		if( customMipLevels > 0 )
+			return customMipLevels;
 		/* atm we don't allow textures with mipmaps < max levels */
 		var lv = 1;
 		var w = width, h = height;
@@ -97,13 +100,9 @@ class Texture {
 		if( tw != w || th != h )
 			this.flags.set(IsNPOT);
 
-		// make the texture disposable if we're out of memory
-		// this can be disabled after allocation by reseting realloc
-		if( this.flags.has(Target) ) realloc = function() { };
-
 		this.width = w;
 		this.height = h;
-		this.mipMap = this.flags.has(MipMapped) ? Nearest : None;
+		this.mipMap = this.flags.has(MipMapped) ? Linear : None;
 		this.filter = Linear;
 		this.wrap = Clamp;
 		bits &= 0x7FFF;
@@ -327,20 +326,6 @@ class Texture {
 	}
 
 	/**
-		Swap two textures, this is an immediate operation.
-		BEWARE : if the texture is a cached image (hxd.res.Image), the swap will affect the cache!
-	**/
-	public function swapTexture( t : Texture ) {
-		checkAlloc();
-		t.checkAlloc();
-		if( isDisposed() || t.isDisposed() )
-			throw "One of the two texture is disposed";
-		var tmp = this.t;
-		this.t = t.t;
-		t.t = tmp;
-	}
-
-	/**
 		Downloads the current texture data from the GPU.
 		Beware, this is a very slow operation that shouldn't be done during rendering.
 	**/
@@ -415,8 +400,8 @@ class Texture {
 		return t;
 	}
 
-	public static function fromPixels( pixels : hxd.Pixels ) {
-		var t = new Texture(pixels.width, pixels.height);
+	public static function fromPixels( pixels : hxd.Pixels, ?format ) {
+		var t = new Texture(pixels.width, pixels.height, null, format != null ? format : pixels.format);
 		t.uploadPixels(pixels);
 		return t;
 	}

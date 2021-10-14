@@ -25,6 +25,7 @@ package h3d.scene.pbr;
 	var Specular = "Specular";
 	var Irrad = "Irrad";
 	var Background = "Background";
+	var CustomColor = "CustomColor";
 }
 
 @:enum abstract TonemapMap(String) {
@@ -36,10 +37,10 @@ typedef RenderProps = {
 	var mode : DisplayMode;
 	var exposure : Float;
 	var sky : SkyMode;
+	var ?skyColor : Int;
 	var tone : TonemapMap;
 	var emissive : Float;
 	var occlusion : Float;
-	var shadows : Bool;
 }
 
 class DepthCopy extends h3d.shader.ScreenShader {
@@ -63,17 +64,17 @@ class Renderer extends h3d.scene.Renderer {
 	var pbrIndirect = new h3d.shader.pbr.Lighting.Indirect();
 	var pbrDirect = new h3d.shader.pbr.Lighting.Direct();
 	var pbrProps = new h3d.shader.pbr.PropsImport();
-	var hasDebugEvent = false;
 	var enableFXAA = true;
 	var currentStep : h3d.impl.RendererFX.Step;
 
 	var textures = {
-		albedo : null,
-		normal : null,
-		pbr : null,
-		other : null,
-		hdr : null,
-		ldr : null,
+		albedo : (null:h3d.mat.Texture),
+		normal : (null:h3d.mat.Texture),
+		pbr : (null:h3d.mat.Texture),
+		other : (null:h3d.mat.Texture),
+		depth : (null:h3d.mat.Texture),
+		hdr : (null:h3d.mat.Texture),
+		ldr : (null:h3d.mat.Texture),
 	};
 
 	public var skyMode : SkyMode = Hide;
@@ -81,7 +82,6 @@ class Renderer extends h3d.scene.Renderer {
 	public var displayMode : DisplayMode = Pbr;
 	public var env : Environment;
 	public var exposure(get,set) : Float;
-	public var shadows = true;
 	var debugShadowMapIndex = 0;
 
 	static var ALPHA : hxsl.Output = Swiz(Value("output.color"),[W]);
@@ -89,12 +89,19 @@ class Renderer extends h3d.scene.Renderer {
 		Value("output.color"),
 		Vec4([Value("output.normal",3),ALPHA]),
 		Vec4([Value("output.metalness"), Value("output.roughness"), Value("output.occlusion"), ALPHA]),
-		Vec4([Value("output.emissive"),Value("output.depth"),Const(0), ALPHA /* ? */])
+		Vec4([Value("output.emissive"), Value("output.custom1"), Value("output.custom2"), ALPHA]),
+		Vec4([Value("output.depth"), Const(0), Const(0), ALPHA])
 	]);
 	var decalsOutput = new h3d.pass.Output("decals",[
 		Vec4([Swiz(Value("output.color"),[X,Y,Z]), Value("output.albedoStrength",1)]),
 		Vec4([Value("output.normal",3), Value("output.normalStrength",1)]),
 		Vec4([Value("output.metalness"), Value("output.roughness"), Value("output.occlusion"), Value("output.pbrStrength")])
+	]);
+	var emissiveDecalsOutput = new h3d.pass.Output("emissiveDecal",[
+		Vec4([Swiz(Value("output.color"),[X,Y,Z]), Value("output.albedoStrength",1)]),
+		Vec4([Value("output.normal",3), Value("output.normalStrength",1)]),
+		Vec4([Value("output.metalness"), Value("output.roughness"), Value("output.occlusion"), Value("output.pbrStrength")]),
+		Vec4([Value("output.emissive"), Value("output.custom1"), Value("output.custom2"), Value("output.emissiveStrength")])
 	]);
 
 	public function new(?env) {
@@ -111,6 +118,7 @@ class Renderer extends h3d.scene.Renderer {
 		allPasses.push(output);
 		allPasses.push(defaultPass);
 		allPasses.push(decalsOutput);
+		allPasses.push(emissiveDecalsOutput);
 		allPasses.push(new h3d.pass.Shadows(null));
 		refreshProps();
 	}
@@ -133,7 +141,7 @@ class Renderer extends h3d.scene.Renderer {
 
 	override function getPassByName(name:String):h3d.pass.Base {
 		switch( name ) {
-		case "overlay", "beforeTonemapping", "albedo", "afterTonemapping", "forward":
+		case "overlay", "beforeTonemapping", "beforeTonemappingAlpha", "albedo", "afterTonemapping", "forward", "forwardAlpha", "distortion":
 			return defaultPass;
 		case "default", "alpha", "additive":
 			return output;
@@ -199,6 +207,13 @@ class Renderer extends h3d.scene.Renderer {
 		if( ctx.lightSystem != null ) ctx.lightSystem.drawPasses = ctx.engine.drawCalls - count;
 		end();
 
+		var pbrLightSystem : h3d.scene.pbr.LightSystem = cast ctx.lightSystem;
+		if (pbrLightSystem != null) {
+			while (pbrLightSystem.lightingShaders.length != 0) {
+				pbrLightSystem.lightingShaders.pop();
+			}
+		}
+
 		begin(Lighting);
 		var lpass = screenLightPass;
 		if( lpass == null ) {
@@ -214,7 +229,7 @@ class Renderer extends h3d.scene.Renderer {
 		pbrProps.isScreen = true;
 		if( ls != null ) {
 			var count = ctx.engine.drawCalls;
-			ls.drawScreenLights(this, lpass);
+			ls.drawScreenLights(this, lpass, shadows);
 			ctx.lightSystem.drawPasses += ctx.engine.drawCalls - count;
 		}
 		// Direct Lighting - With Primitive
@@ -311,6 +326,8 @@ class Renderer extends h3d.scene.Renderer {
 	override function computeStatic() {
 		var light = @:privateAccess ctx.lights;
 		var passes = get("shadow");
+		if (!shadows)
+			passes.clear();
 		while( light != null ) {
 			var plight = hxd.impl.Api.downcast(light, h3d.scene.pbr.Light);
 			if( plight != null ) {
@@ -326,14 +343,15 @@ class Renderer extends h3d.scene.Renderer {
 		textures.albedo = allocTarget("albedo", true, 1.);
 		textures.normal = allocTarget("normal", true, 1., RGBA16F);
 		textures.pbr = allocTarget("pbr", true, 1.);
-		textures.other = allocTarget("other", true, 1., RGBA32F);
+		textures.other = allocTarget("other", true, 1.);
+		textures.depth = allocTarget("depth", true, 1., R32F);
 		textures.hdr = allocTarget("hdrOutput", true, 1, RGBA16F);
 		textures.ldr = allocTarget("ldrOutput");
 	}
 
 	function initGlobals() {
 		ctx.setGlobal("albedoMap", { texture : textures.albedo, channel : hxsl.Channel.R });
-		ctx.setGlobal("depthMap", { texture : textures.other, channel : hxsl.Channel.G });
+		ctx.setGlobal("depthMap", { texture : textures.depth, channel : hxsl.Channel.R });
 		ctx.setGlobal("normalMap", { texture : textures.normal, channel : hxsl.Channel.R });
 		ctx.setGlobal("occlusionMap", { texture : textures.pbr, channel : hxsl.Channel.B });
 		ctx.setGlobal("hdrMap", textures.hdr);
@@ -359,6 +377,7 @@ class Renderer extends h3d.scene.Renderer {
 		pbrProps.albedoTex = textures.albedo;
 		pbrProps.normalTex = textures.normal;
 		pbrProps.pbrTex = textures.pbr;
+		pbrProps.depthTex = textures.depth;
 		pbrProps.otherTex = textures.other;
 		pbrProps.cameraInverseViewProj = ctx.camera.getInverseViewProj();
 		pbrProps.occlusionPower = props.occlusion * props.occlusion;
@@ -368,8 +387,7 @@ class Renderer extends h3d.scene.Renderer {
 		if( env != null ) {
 			pbrIndirect.cameraPosition.load(ctx.camera.pos);
 			pbrIndirect.emissivePower = props.emissive * props.emissive;
-			var rot = hxd.Math.degToRad(env.rot);
-			pbrIndirect.irrRotation.set(Math.cos(rot), Math.sin(rot));
+			pbrIndirect.irrRotation.set(Math.cos(env.rotation), Math.sin(env.rotation));
 			pbrIndirect.irrPower = env.power * env.power;
 			pbrIndirect.irrLut = env.lut;
 			pbrIndirect.irrDiffuse = env.diffuse;
@@ -400,6 +418,11 @@ class Renderer extends h3d.scene.Renderer {
 				case Background:
 					pbrIndirect.skyColor = true;
 					pbrIndirect.skyColorValue.setColor(ctx.engine.backgroundColor);
+					pbrIndirect.gammaCorrect = true;
+					null;
+				case CustomColor:
+					pbrIndirect.skyColor = true;
+					pbrIndirect.skyColorValue.setColor(props.skyColor);
 					pbrIndirect.gammaCorrect = true;
 					null;
 				};
@@ -436,11 +459,24 @@ class Renderer extends h3d.scene.Renderer {
 		ctx.engine.popTarget();
 	}
 
+	function drawEmissiveDecals( passName : String ) {
+		var passes = get(passName);
+		if( passes.isEmpty() ) return;
+		ctx.engine.pushTargets([textures.albedo,textures.normal,textures.pbr,textures.other]);
+		renderPass(emissiveDecalsOutput, passes);
+		ctx.engine.popTarget();
+	}
+
 	override function render() {
 		beginPbr();
 
+		setTarget(textures.depth);
+		ctx.engine.clearF(new h3d.Vector(1));
+
 		setTargets([textures.albedo,textures.normal,textures.pbr,textures.other]);
 		clear(0, 1, 0);
+
+		setTargets([textures.albedo,textures.normal,textures.pbr,textures.other,textures.depth]);
 
 		begin(MainDraw);
 		renderPass(output, get("terrain"));
@@ -452,6 +488,7 @@ class Renderer extends h3d.scene.Renderer {
 
 		begin(Decals);
 		drawPbrDecals("decal");
+		drawEmissiveDecals("emissiveDecal");
 		end();
 
 		setTarget(textures.hdr);
@@ -462,6 +499,7 @@ class Renderer extends h3d.scene.Renderer {
 		var ls = hxd.impl.Api.downcast(getLightSystem(), h3d.scene.pbr.LightSystem);
 		ls.forwardMode = true;
 		draw("forward");
+		renderPass(defaultPass, get("forwardAlpha"), backToFront);
 		ls.forwardMode = false;
 		end();
 
@@ -540,13 +578,13 @@ class Renderer extends h3d.scene.Renderer {
 			slides.shader.shadowMapChannel = R;
 			pbrProps.isScreen = true;
 			slides.render();
-			if( !hasDebugEvent ) {
-				hasDebugEvent = true;
+			if( !debugging ) {
+				debugging = true;
 				hxd.Window.getInstance().addEventTarget(onEvent);
 			}
 		}
-		if( hasDebugEvent && displayMode != Debug ) {
-			hasDebugEvent = false;
+		if( debugging && displayMode != Debug ) {
+			debugging = false;
 			hxd.Window.getInstance().removeEventTarget(onEvent);
 		}
 		mark("vsync");
@@ -586,7 +624,6 @@ class Renderer extends h3d.scene.Renderer {
 			sky : Irrad,
 			tone : Linear,
 			occlusion : 1.,
-			shadows: true
 		};
 		return props;
 	}
@@ -601,7 +638,6 @@ class Renderer extends h3d.scene.Renderer {
 		skyMode = props.sky;
 		toneMode = props.tone;
 		exposure = props.exposure;
-		shadows = props.shadows;
 	}
 
 	#if editor
@@ -641,15 +677,16 @@ class Renderer extends h3d.scene.Renderer {
 								<option value="Specular">Show Specular</option>
 								<option value="Irrad">Show Irrad</option>
 								<option value="Background">Background Color</option>
+								<option value="CustomColor">Custom Color</option>
 							</select>
 						</dd>
+						'+(skyMode==CustomColor?'<dt>Sky Color</dt><dd><input type="color" field="skyColor"/></dd>':'')+'
 				</div>
 
 				<div class="group" name="Params">
 					<dt>Emissive</dt><dd><input type="range" min="0" max="2" field="emissive"></dd>
 					<dt>Occlusion</dt><dd><input type="range" min="0" max="2" field="occlusion"></dd>
 					<dt>Exposure</dt><dd><input type="range" min="-3" max="3" field="exposure"></dd>
-					<dt>Shadows</dt><dd><input type="checkbox" field="shadows"></dd>
 				</div>
 			</dl>
 			</div>

@@ -9,8 +9,6 @@ class PassObjects {
 	}
 }
 
-private typedef SMap<T> = #if flash haxe.ds.UnsafeStringMap<T> #else Map<String,T> #end;
-
 enum RenderMode{
 	Default;
 	LightProbe;
@@ -21,21 +19,24 @@ enum RenderMode{
 class Renderer extends hxd.impl.AnyProps {
 
 	var defaultPass : h3d.pass.Base;
-	var passObjects : SMap<PassObjects>;
+	var passObjects : Map<String,PassObjects>;
 	var allPasses : Array<h3d.pass.Base>;
 	var emptyPasses = new h3d.pass.PassList();
 	var ctx : RenderContext;
 	var hasSetTarget = false;
 	var frontToBack : h3d.pass.PassList -> Void;
 	var backToFront : h3d.pass.PassList -> Void;
+	var debugging = false;
 
 	public var effects : Array<h3d.impl.RendererFX> = [];
 
 	public var renderMode : RenderMode = Default;
 
+	public var shadows : Bool = true;
+
 	public function new() {
 		allPasses = [];
-		passObjects = new SMap();
+		passObjects = new Map();
 		props = getDefaultProps();
 		// pre allocate closures
 		frontToBack = depthSort.bind(true);
@@ -55,7 +56,9 @@ class Renderer extends hxd.impl.AnyProps {
 			p.dispose();
 		for( f in effects )
 			f.dispose();
-		passObjects = new SMap();
+		if ( ctx.lightSystem != null )
+			ctx.lightSystem.dispose();
+		passObjects = new Map();
 	}
 
 	function mark(id: String) {
@@ -92,10 +95,6 @@ class Renderer extends hxd.impl.AnyProps {
 		return h3d.Engine.getCurrent().driver.hasFeature(f);
 	}
 
-	function getDefaultLight<T:h3d.scene.Light>( l : T ) : T {
-		return l;
-	}
-
 	function getLightSystem() : h3d.scene.LightSystem {
 		return ctx.scene.lightSystem;
 	}
@@ -109,9 +108,9 @@ class Renderer extends hxd.impl.AnyProps {
 			p.depth = z / w;
 		}
 		if( frontToBack )
-			passes.sort(function(p1, p2) return p1.pass.layer == p2.pass.layer ? (p1.depth > p2.depth ? 1 : -1) : p1.pass.layer - p2.pass.layer);
+			passes.sort(function(p1, p2) return p1.depth > p2.depth ? 1 : -1);
 		else
-			passes.sort(function(p1, p2) return p1.pass.layer == p2.pass.layer ? (p1.depth > p2.depth ? -1 : 1) : p1.pass.layer - p2.pass.layer);
+			passes.sort(function(p1, p2) return p1.depth > p2.depth ? -1 : 1);
 	}
 
 	inline function clear( ?color, ?depth, ?stencil ) {

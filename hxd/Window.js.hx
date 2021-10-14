@@ -26,11 +26,11 @@ class Window {
 
 	var curMouseX : Float = 0.;
 	var curMouseY : Float = 0.;
+	var _mouseLock : Bool = false;
 
 	var canvas : js.html.CanvasElement;
 	var element : js.html.EventTarget;
 	var canvasPos : { var width(default, never) : Float; var height(default, never) : Float; var left(default, never) : Float; var top(default, never) : Float; };
-	var timer : haxe.Timer;
 
 	var curW : Int;
 	var curH : Int;
@@ -41,12 +41,17 @@ class Window {
 		When enabled, the browser zoom does not affect the canvas.
 		(default : true)
 	**/
-	public var useScreenPixels : Bool = true;
+	public var useScreenPixels : Bool = js.Browser.supported;
 
 	public function new( ?canvas : js.html.CanvasElement, ?globalEvents ) : Void {
 		var customCanvas = canvas != null;
 		eventTargets = new List();
 		resizeEvents = new List();
+		
+		if( !js.Browser.supported ) {
+			canvasPos = { "width":0, "top":0, "left":0, "height":0 };
+			return;
+		}
 
 		if( canvas == null ) {
 			canvas = cast js.Browser.document.getElementById("webgl");
@@ -68,12 +73,18 @@ class Window {
 		canvasPos = canvas.getBoundingClientRect();
 		// add mousemove on window (track mouse even when outside of component)
 		// unless we're having a custom canvas (prevent leaking the listener)
-		if( customCanvas )
+		if( customCanvas ) {
 			canvas.addEventListener("mousemove", onMouseMove);
-		else
+		}
+			
+		else {
 			js.Browser.window.addEventListener("mousemove", onMouseMove);
+		}
+			
+		
 		element.addEventListener("mousedown", onMouseDown);
 		element.addEventListener("mouseup", onMouseUp);
+		element.addEventListener("mouseleave", onMouseLeave);
 		element.addEventListener("wheel", onMouseWheel);
 		element.addEventListener("touchstart", onTouchStart);
 		element.addEventListener("touchmove", onTouchMove);
@@ -83,6 +94,9 @@ class Window {
 		element.addEventListener("keypress", onKeyPress);
 		element.addEventListener("blur", onFocus.bind(false));
 		element.addEventListener("focus", onFocus.bind(true));
+
+		js.Browser.window.addEventListener("resize", checkResize);
+
 		canvas.oncontextmenu = function(e){
 			e.stopPropagation();
 			e.preventDefault();
@@ -108,8 +122,6 @@ class Window {
 		}
 		curW = this.width;
 		curH = this.height;
-		timer = new haxe.Timer(100);
-		timer.run = checkResize;
 	}
 
 	function checkResize() {
@@ -123,7 +135,6 @@ class Window {
 	}
 
 	public function dispose() {
-		timer.stop();
 	}
 
 	public dynamic function onClose() : Bool {
@@ -210,12 +221,21 @@ class Window {
 	}
 
 	function get_mouseLock() : Bool {
-		return false;
+		return _mouseLock;
 	}
 
 	function set_mouseLock( v : Bool ) : Bool {
-		if( v ) throw "Not implemented";
-		return false;
+		var customCanvas = canvas != null;
+		if (v) {
+				if (customCanvas) canvas.requestPointerLock();
+				else js.Browser.window.document.documentElement.requestPointerLock();
+			}
+			
+		else {
+			if (customCanvas) canvas.ownerDocument.exitPointerLock();
+			else js.Browser.window.document.exitPointerLock();
+		}
+		return _mouseLock = v;
 	}
 
 	function get_vsync() : Bool return true;
@@ -226,8 +246,14 @@ class Window {
 	}
 
 	function onMouseDown(e:js.html.MouseEvent) {
-		if(e.clientX != curMouseX || e.clientY != curMouseY)
-			onMouseMove(e);
+		if (mouseLock) {
+			if (e.movementX != 0 || e.movementY != 0)
+				onMouseMove(e);
+		}
+		else {
+			if(e.clientX != curMouseX || e.clientY != curMouseY)
+				onMouseMove(e);
+		}
 		var ev = new Event(EPush, mouseX, mouseY);
 		ev.button = switch( e.button ) {
 			case 1: 2;
@@ -238,8 +264,14 @@ class Window {
 	}
 
 	function onMouseUp(e:js.html.MouseEvent) {
-		if(e.clientX != curMouseX || e.clientY != curMouseY)
-			onMouseMove(e);
+		if (mouseLock) {
+			if (e.movementX != 0 || e.movementY != 0)
+				onMouseMove(e);
+		}
+		else {
+			if(e.clientX != curMouseX || e.clientY != curMouseY)
+				onMouseMove(e);
+		}
 		var ev = new Event(ERelease, mouseX, mouseY);
 		ev.button = switch( e.button ) {
 			case 1: 2;
@@ -249,9 +281,26 @@ class Window {
 		event(ev);
 	}
 
+	function onMouseLeave(e:js.html.MouseEvent) {
+		var ev = new Event(EReleaseOutside, mouseX, mouseY);
+		ev.button = switch( e.button ) {
+			case 1: 2;
+			case 2: 1;
+			case x: x;
+		};
+		event(ev);
+	}
+
 	function onMouseMove(e:js.html.MouseEvent) {
-		curMouseX = e.clientX;
-		curMouseY = e.clientY;
+		if (mouseLock) {
+			curMouseX += e.movementX;
+			curMouseY += e.movementY;
+		}
+		else {
+			curMouseX = e.clientX;
+			curMouseY = e.clientY;
+		}
+		
 		event(new Event(EMove, mouseX, mouseY));
 	}
 
@@ -355,6 +404,8 @@ class Window {
 	}
 
 	function set_displayMode( m : DisplayMode ) : DisplayMode {
+		if( !js.Browser.supported )
+			return m;
 		var doc = js.Browser.document;
 		var elt : Dynamic = doc.documentElement;
 		var fullscreen = m != Windowed;
