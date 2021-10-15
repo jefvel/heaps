@@ -17,8 +17,8 @@ class BigPrimitive extends Primitive {
 	var idxPos : Int = 0;
 	var startIndex : Int = 0;
 	var flushing : Bool;
-	#if debug
-	var allocPos : h3d.impl.AllocPos;
+	#if track_alloc
+	var allocPos : hxd.impl.AllocPos;
 	#end
 
 	public var hasTangents = false;
@@ -27,15 +27,15 @@ class BigPrimitive extends Primitive {
 	static var PREV_BUFFER : hxd.FloatBuffer;
 	static var PREV_INDEX : hxd.IndexBuffer;
 
-	public function new(stride, isRaw=false, ?pos : h3d.impl.AllocPos ) {
+	public function new(stride, isRaw=false ) {
 		this.isRaw = isRaw;
 		buffers = [];
 		allIndexes = [];
 		bounds = new h3d.col.Bounds();
 		this.stride = stride;
 		if( stride < 3 ) throw "Minimum stride = 3";
-		#if debug
-		allocPos = pos;
+		#if track_alloc
+		allocPos = new hxd.impl.AllocPos();
 		#end
 	}
 
@@ -121,11 +121,16 @@ class BigPrimitive extends Primitive {
 		if( tmpBuf != null ) {
 			if( bufPos > 0 && idxPos > 0 ) {
 				flushing = true;
-				var b = h3d.Buffer.ofSubFloats(tmpBuf, stride, Std.int(bufPos / stride) #if debug , null, allocPos #end);
+				var b = h3d.Buffer.ofSubFloats(tmpBuf, stride, Std.int(bufPos / stride));
 				if( isRaw ) b.flags.set(RawFormat);
 				buffers.push(b);
-				allIndexes.push(h3d.Indexes.alloc(tmpIdx, 0, idxPos));
+				var idx = h3d.Indexes.alloc(tmpIdx, 0, idxPos);
+				allIndexes.push(idx);
 				flushing = false;
+				#if track_alloc
+				@:privateAccess b.allocPos = allocPos;
+				@:privateAccess idx.allocPos = allocPos;
+				#end
 			}
 			if( PREV_BUFFER == null || PREV_BUFFER.length < tmpBuf.length )
 				PREV_BUFFER = tmpBuf;
@@ -305,66 +310,5 @@ class BigPrimitive extends Primitive {
 		for( i in 0...triCount * 3 )
 			tmpIdx[idxPos++] = idx[i+startTri*3] + start;
 	}
-
-	#if hxbit
-	override function customSerialize(ctx:hxbit.Serializer) {
-		flush();
-		ctx.addBool(isRaw);
-		ctx.addInt(stride);
-		ctx.addFloat(bounds.xMin);
-		ctx.addFloat(bounds.yMin);
-		ctx.addFloat(bounds.zMin);
-		ctx.addFloat(bounds.xMax);
-		ctx.addFloat(bounds.yMax);
-		ctx.addFloat(bounds.zMax);
-		ctx.addInt(buffers.length);
-		var reqSize = 0;
-		for( a in allIndexes ) {
-			var sz = a.count << 1;
-			if( reqSize < sz ) reqSize = sz;
-		}
-		for( b in buffers ) {
-			var sz = (b.vertices * stride) << 2;
-			if( reqSize < sz ) reqSize = sz;
-		}
-		var tmpBytes = haxe.io.Bytes.alloc(reqSize);
-		for( i in 0...buffers.length ) {
-			var idx = allIndexes[i];
-			idx.readBytes(tmpBytes, 0, idx.count);
-			ctx.addInt(idx.count);
-			ctx.addBytesSub(tmpBytes, 0, idx.count << 1);
-
-			var b = buffers[i];
-			b.readBytes(tmpBytes, 0, b.vertices);
-			ctx.addInt(b.vertices);
-			ctx.addBytesSub(tmpBytes, 0, b.vertices * stride << 2);
-		}
-	}
-	override function customUnserialize(ctx:hxbit.Serializer) {
-		isRaw = ctx.getBool();
-		stride = ctx.getInt();
-		bounds = new h3d.col.Bounds();
-		bounds.xMin = ctx.getFloat();
-		bounds.yMin = ctx.getFloat();
-		bounds.zMin = ctx.getFloat();
-		bounds.xMin = ctx.getFloat();
-		bounds.yMax = ctx.getFloat();
-		bounds.zMax = ctx.getFloat();
-		var count = ctx.getInt();
-		buffers = [];
-		allIndexes = [];
-		for( i in 0...count ) {
-			var nidx = ctx.getInt();
-			var idx = new h3d.Indexes(nidx);
-			idx.uploadBytes(ctx.getBytes(), 0, nidx);
-			allIndexes.push(idx);
-
-			var nvert = ctx.getInt();
-			var buf = new h3d.Buffer(nvert, stride);
-			buf.uploadBytes(ctx.getBytes(), 0, nvert);
-			buffers.push(buf);
-		}
-	}
-	#end
 
 }

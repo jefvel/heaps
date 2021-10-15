@@ -2,33 +2,36 @@ package h3d.scene;
 
 class Interactive extends Object implements hxd.SceneEvents.Interactive {
 
-	@:s public var shape : h3d.col.Collider;
+	var debugObj : Object;
+	public var showDebug(default, set) : Bool = false;
+
+	public var shape : h3d.col.Collider;
 
 	/**
 		If several interactive conflicts, the preciseShape (if defined) can be used to distinguish between the two.
 	**/
-	@:s public var preciseShape : Null<h3d.col.Collider>;
+	public var preciseShape : Null<h3d.col.Collider>;
 
 	/**
 		In case of conflicting shapes, usually the one in front of the camera is prioritized, unless you set an higher priority.
 	**/
-	@:s public var priority : Int;
+	public var priority : Int;
 
-	public var cursor(default,set) : hxd.Cursor;
+	public var cursor(default,set) : Null<hxd.Cursor>;
 	/**
 		Set the default `cancel` mode (see `hxd.Event`), default to false.
 	**/
-	@:s public var cancelEvents : Bool = false;
+	public var cancelEvents : Bool = false;
 	/**
 		Set the default `propagate` mode (see `hxd.Event`), default to false.
 	**/
-	@:s public var propagateEvents : Bool = false;
-	@:s public var enableRightButton : Bool;
+	public var propagateEvents : Bool = false;
+	public var enableRightButton : Bool;
 
 	/**
 		Is it required to find the best hit point in a complex mesh or any hit possible point will be enough (default = false, faster).
 	**/
-	@:s public var bestMatch : Bool;
+	public var bestMatch : Bool;
 
 	var scene : Scene;
 	var mouseDownButton : Int = -1;
@@ -40,6 +43,39 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 		super(parent);
 		this.shape = shape;
 		cursor = Button;
+	}
+
+	public function set_showDebug(val) {
+		if( !val ) {
+			if( debugObj != null )
+				debugObj.remove();
+			debugObj = null;
+			return false;
+		}
+		if( debugObj != null )
+			return true;
+		debugObj = shape.makeDebugObj();
+		if( debugObj != null ) {
+			setupDebugMaterial(debugObj);
+
+			debugObj.ignoreParentTransform = true;
+			this.addChild(debugObj);
+		}
+		return debugObj != null;
+	}
+
+	public static dynamic function setupDebugMaterial(debugObj: Object) {
+		var materials = debugObj.getMaterials();
+		for( m in materials ) {
+			var engine = h3d.Engine.getCurrent();
+			if( engine.driver.hasFeature(Wireframe) )
+				m.mainPass.wireframe = true;
+			m.castShadows = false;
+			m.receiveShadows = false;
+			m.color.a = 0.7;
+			m.blendMode = Alpha;
+			// m.mainPass.depth(false, Always);
+		}
 	}
 
 	override function onAdd() {
@@ -77,6 +113,7 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 			if( enableRightButton || e.button == 0 ) {
 				mouseDownButton = e.button;
 				onPush(e);
+				if( e.cancel ) mouseDownButton = -1;
 			}
 		case ERelease:
 			if( enableRightButton || e.button == 0 ) {

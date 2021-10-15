@@ -35,6 +35,9 @@ class System {
 	static var currentNativeCursor:hxd.Cursor;
 	static var currentCustomCursor:hxd.Cursor.CustomCursor;
 
+	/** If greater than 0, this will reduce loop framerate to reduce CPU usage **/
+	public static var fpsLimit = -1;
+
 	public static function getCurrentLoop() : Void -> Void {
 		return loopFunc;
 	}
@@ -48,11 +51,22 @@ class System {
 	}
 
 	static function browserLoop() {
-		var window : Dynamic = js.Browser.window;
-		var rqf : Dynamic = window.requestAnimationFrame ||
-			window.webkitRequestAnimationFrame ||
-			window.mozRequestAnimationFrame;
-		rqf(browserLoop);
+		if( js.Browser.supported ) {
+			var window : Dynamic = js.Browser.window;
+			var rqf : Dynamic = window.requestAnimationFrame ||
+				window.webkitRequestAnimationFrame ||
+				window.mozRequestAnimationFrame;
+			if( fpsLimit>0 )
+				js.Browser.window.setTimeout( ()->rqf(browserLoop), 1000/fpsLimit );
+			else
+				rqf(browserLoop);
+		} else {
+			#if (nodejs && hxnodejs)
+			js.node.Timers.setTimeout(browserLoop, 0);
+			#else
+			throw "Cannot use browserLoop without Browser support nor defining nodejs + hxnodejs";
+			#end
+		}
 		if( loopFunc != null ) loopFunc();
 	}
 
@@ -110,6 +124,10 @@ class System {
 	public static function exit() : Void {
 	}
 
+	public static function openURL( url : String ) : Void {
+		js.Browser.window.open(url, '_blank');
+	}
+
 	static function updateCursor() : Void {
 		if ( currentCustomCursor != null ) {
 			var change = currentCustomCursor.update(hxd.Timer.elapsedTime);
@@ -122,11 +140,30 @@ class System {
 		}
 	}
 
+	public static function getClipboardText() : String {
+		#if (hide && editor)
+		return nw.Clipboard.get().get(Text);
+		#end
+		return null;
+	}
+
+	public static function setClipboardText(text:String) : Bool {
+		#if (hide && editor)
+		nw.Clipboard.get().set(text, Text);
+		return true;
+		#end
+		return false;
+	}
+
+	public static function getLocale() : String {
+		return js.Browser.navigator.language + "_" + js.Browser.navigator.language.toUpperCase();
+	}
+
 	// getters
 
 	static function get_width() : Int return Math.round(js.Browser.document.body.clientWidth * js.Browser.window.devicePixelRatio);
 	static function get_height() : Int return Math.round(js.Browser.document.body.clientHeight  * js.Browser.window.devicePixelRatio);
-	static function get_lang() : String return "en";
+	static function get_lang() : String return js.Browser.navigator.language;
 	static function get_platform() : Platform {
 		var ua = js.Browser.navigator.userAgent.toLowerCase();
 		if( ua.indexOf("android")>=0 )

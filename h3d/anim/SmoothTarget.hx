@@ -17,9 +17,11 @@ private class SmoothObject extends Animation.AnimatedObject {
 
 class SmoothTarget extends Animation {
 
-	@:s public var target : Animation;
-	@:s public var blend : Float;
-	@:s var duration : Float;
+	public var target : Animation;
+	public var blend : Float;
+	public var duration : Float;
+	public var ignoreTranslate = false;
+	public var easing : Float = 0.;
 
 	public function new( target : h3d.anim.Animation, duration = 0.5 ) {
 		super("SmoothTarget(" + target.name+")", target.frameCount, target.sampling);
@@ -97,6 +99,9 @@ class SmoothTarget extends Animation {
 		if( decompose ) throw "assert";
 		var objects = getSmoothObjects();
 		target.sync(true);
+
+		var blend = hxd.Math.easeFactor(blend, easing);
+
 		for( o in objects ) {
 			var m = @:privateAccess if( o.targetSkin != null ) o.targetSkin.currentRelPose[o.targetJoint] else if( o.targetObject != null ) o.targetObject.defaultTransform else null;
 
@@ -132,7 +137,7 @@ class SmoothTarget extends Animation {
 			} else {
 
 				q1.set(m._12, m._13, m._21, m._23);
-				qout.lerp(o.q, q1, 1 - blend, true);
+				qout.lerp(o.q, q1, blend, true);
 				qout.normalize();
 				qout.toMatrix(mout);
 
@@ -149,9 +154,15 @@ class SmoothTarget extends Animation {
 				mout._32 *= sz;
 				mout._33 *= sz;
 
-				mout.tx = lerp(o.tx, m.tx, blend);
-				mout.ty = lerp(o.ty, m.ty, blend);
-				mout.tz = lerp(o.tz, m.tz, blend);
+				if( ignoreTranslate ) {
+					mout.tx = m.tx;
+					mout.ty = m.ty;
+					mout.tz = m.tz;
+				} else {
+					mout.tx = lerp(o.tx, m.tx, blend);
+					mout.ty = lerp(o.ty, m.ty, blend);
+					mout.tz = lerp(o.tz, m.tz, blend);
+				}
 
 				@:privateAccess if( o.targetSkin != null ) o.targetSkin.currentRelPose[o.targetJoint] = mout else o.targetObject.defaultTransform = mout;
 			}
@@ -181,47 +192,6 @@ class SmoothTarget extends Animation {
 			n.sy = o.sy;
 			n.sz = o.sz;
 			n.q.load(o.q);
-		}
-	}
-	#end
-
-	#if (hxbit && !macro)
-	function customSerialize( ctx : hxbit.Serializer ) {
-		var objects : Array<SmoothObject> = cast objects;
-		var objects = [for( o in objects ) if( o.tmpMatrix != null ) o];
-		ctx.addInt(objects.length);
-		for( o in objects ) {
-			ctx.addString(o.objectName);
-			ctx.addFloat(o.tx);
-			ctx.addFloat(o.ty);
-			ctx.addFloat(o.tz);
-			ctx.addFloat(o.sx);
-			ctx.addFloat(o.sy);
-			ctx.addFloat(o.sz);
-			ctx.addFloat(o.q.x);
-			ctx.addFloat(o.q.y);
-			ctx.addFloat(o.q.z);
-			ctx.addFloat(o.q.w);
-		}
-	}
-	function customUnserialize( ctx : hxbit.Serializer ) {
-		var count = ctx.getInt();
-		var cur = 0;
-		objects = [];
-		for( i in 0...count ) {
-			var o = new SmoothObject(ctx.getString());
-			o.tx = ctx.getFloat();
-			o.ty = ctx.getFloat();
-			o.tz = ctx.getFloat();
-			o.sx = ctx.getFloat();
-			o.sy = ctx.getFloat();
-			o.sz = ctx.getFloat();
-			o.q = new h3d.Quat();
-			o.q.x = ctx.getFloat();
-			o.q.y = ctx.getFloat();
-			o.q.z = ctx.getFloat();
-			o.q.w = ctx.getFloat();
-			objects.push(o);
 		}
 	}
 	#end

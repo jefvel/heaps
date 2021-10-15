@@ -21,6 +21,8 @@ class Reader {
 			throw "Obsolete HasMaterialFlags";
 		case 2:
 			return HasExtraTextures;
+		case 3:
+			return FourBonesByVertex;
 		case unk:
 			throw "Unknown property #" + unk;
 		}
@@ -40,10 +42,10 @@ class Reader {
 		if( b == 0xFF ) return null;
 		return i.readString(b);
 	}
-	
-	
+
+
 	static var HMD_STRINGS : Map<String,String>;
-	
+
 	// make sure some strings are reused between models
 	// in order to prevent many similar String to be kept into memory
 	function readCachedName() {

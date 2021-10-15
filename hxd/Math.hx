@@ -64,10 +64,6 @@ class Math {
 		return std.Math.pow(v,p);
 	}
 
-	public static inline function scaleTime( v : Float, et : Float ) {
-		return std.Math.pow(v,et * hxd.Timer.wantedFPS);
-	}
-
 	public static inline function cos( f : Float ) {
 		return std.Math.cos(f);
 	}
@@ -139,6 +135,28 @@ class Math {
 		return a + k * (b - a);
 	}
 
+	/**
+	 	Similar to linear interpolation (k is between [0,1]), but can be controled with easing parameter. When easing is 0 it's linear.
+	**/
+	public inline static function ease(a:Float, b:Float, k:Float, easing:Float) {
+		return lerp(a, b, easeFactor(k, easing));
+	}
+
+	/**
+		ease = lerp(a,b,easeFactor(k,easing))
+	**/
+	public inline static function easeFactor( k : Float, easing : Float ) {
+		var p = Math.pow(k, 1 + easing);
+		return p / (p + Math.pow(1 - k, easing + 1));
+	}
+
+	/**
+		Same as lerp but is scaled based on current FPS, using current elapsed time in seconds.
+	**/
+	public inline static function lerpTime(a:Float, b:Float, k:Float, dt:Float) {
+		return lerp(a, b, 1 - Math.pow(1 - k, dt * hxd.Timer.wantedFPS));
+	}
+
 	public inline static function bitCount(v:Int) {
 		v = v - ((v >> 1) & 0x55555555);
 		v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
@@ -205,6 +223,20 @@ class Math {
 	public static inline function angleMove( a : Float, b : Float, max : Float ) {
 		var da = angle(b - a);
 		return if( da > -max && da < max ) b else a + (da < 0 ? -max : max);
+	}
+
+	/**
+		Move a value towards the given target using the max increment. Return the new value.
+	**/
+	public static inline function valueMove( v : Float, target : Float, max : Float ) {
+		if( v < target ) {
+			v += max;
+			if( v > target ) v = target;
+		} else if( v > target ) {
+			v -= max;
+			if( v < target ) v = target;
+		}
+		return v;
 	}
 
 	public static inline function shuffle<T>( a : Array<T> ) {

@@ -66,7 +66,7 @@ class Bounds implements Collider {
 	}
 
 	/**
-	 * Check if the camera model-view-projection Matrix intersects with the Bounds. Returns -1 if outside, 0 if interests and 1 if fully inside.
+	 * Check if the camera model-view-projection Matrix intersects with the Bounds. Returns -1 if outside, 0 if intersects and 1 if fully inside.
 	 * @param	mvp : the model-view-projection matrix to test against
 	 * @param	checkZ : tells if we will check against the near/far plane
 	 */
@@ -194,6 +194,14 @@ class Bounds implements Collider {
 		return p.x >= xMin && p.x < xMax && p.y >= yMin && p.y < yMax && p.z >= zMin && p.z < zMax;
 	}
 
+	public inline function containsBounds( b : Bounds ) {
+		return xMin <= b.xMin && yMin <= b.yMin && zMin <= b.zMin && xMax >= b.xMax && yMax >= b.yMax && zMax >= b.zMax;
+	}
+
+	public inline function containsSphere( s : Sphere ) {
+		return xMin <= s.x - s.r  && yMin <= s.y - s.r && zMin <= s.z - s.r && xMax >= s.x + s.r && yMax >= s.y + s.r && zMax >= s.z + s.r;
+	}
+
 	public inline function add( b : Bounds ) {
 		if( b.xMin < xMin ) xMin = b.xMin;
 		if( b.xMax > xMax ) xMax = b.xMax;
@@ -219,6 +227,19 @@ class Bounds implements Collider {
 		if( y > yMax ) yMax = y;
 		if( z < zMin ) zMin = z;
 		if( z > zMax ) zMax = z;
+	}
+
+	public inline function addSphere( s : Sphere ) {
+		addSpherePos(s.x, s.y, s.z, s.r);
+	}
+
+	public inline function addSpherePos( x : Float, y : Float, z : Float, r : Float ) {
+		if( x - r < xMin ) xMin = x - r;
+		if( x + r > xMax ) xMax = x + r;
+		if( y - r < yMin ) yMin = y - r;
+		if( y + r > yMax ) yMax = y + r;
+		if( z - r < zMin ) zMin = z - r;
+		if( z + r > zMax ) zMax = z + r;
 	}
 
 	public function intersection( a : Bounds, b : Bounds ) {
@@ -307,6 +328,10 @@ class Bounds implements Collider {
 		return new Point(xMax, yMax, zMax);
 	}
 
+	public inline function getVolume() {
+		return xSize * ySize * zSize;
+	}
+
 	inline function get_xSize() return xMax - xMin;
 	inline function get_ySize() return yMax - yMin;
 	inline function get_zSize() return zMax - zMin;
@@ -376,22 +401,12 @@ class Bounds implements Collider {
 		return b;
 	}
 
-	#if (hxbit && !macro)
-	function customSerialize( ctx : hxbit.Serializer ) {
-		ctx.addFloat(xMin);
-		ctx.addFloat(xMax);
-		ctx.addFloat(yMin);
-		ctx.addFloat(yMax);
-		ctx.addFloat(zMin);
-		ctx.addFloat(zMax);
-	}
-	function customUnserialize( ctx : hxbit.Serializer ) {
-		xMin = ctx.getFloat();
-		xMax = ctx.getFloat();
-		yMin = ctx.getFloat();
-		yMax = ctx.getFloat();
-		zMin = ctx.getFloat();
-		zMax = ctx.getFloat();
+	#if !macro
+	public function makeDebugObj() : h3d.scene.Object {
+		var prim = new h3d.prim.Cube(xMax - xMin, yMax - yMin, zMax - zMin);
+		prim.translate(xMin, yMin, zMin);
+		prim.addNormals();
+		return new h3d.scene.Mesh(prim);
 	}
 	#end
 

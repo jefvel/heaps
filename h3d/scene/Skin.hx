@@ -1,8 +1,8 @@
 package h3d.scene;
 
 class Joint extends Object {
-	@:s public var skin : Skin;
-	@:s public var index : Int;
+	public var skin : Skin;
+	public var index : Int;
 
 	public function new(skin, j : h3d.anim.Skin.Joint ) {
 		super(null);
@@ -78,6 +78,7 @@ class Skin extends MultiMaterial {
 	var jointsGraphics : Graphics;
 
 	public var showJoints : Bool;
+	public var enableRetargeting : Bool = true;
 
 	public function new(s, ?mat, ?parent) {
 		super(null, mat, parent);
@@ -93,24 +94,41 @@ class Skin extends MultiMaterial {
 		return s;
 	}
 
+	static var tmpVec = new h3d.Vector();
 	override function getBoundsRec( b : h3d.col.Bounds ) {
+		// ignore primitive bounds !
+		var old = primitive;
+		primitive = null;
 		b = super.getBoundsRec(b);
-		var tmp = primitive.getBounds().clone();
-		var b0 = skinData.allJoints[0];
-		// not sure if that's the good joint
-		if( b0 != null && b0.parent == null ) {
-			var mtmp = absPos.clone();
-			var r = currentRelPose[b0.index];
-			if( r != null )
-				mtmp.multiply3x4(r, mtmp);
-			else
-				mtmp.multiply3x4(b0.defMat, mtmp);
-			if( b0.transPos != null )
-				mtmp.multiply3x4(b0.transPos, mtmp);
-			tmp.transform(mtmp);
-		} else
-			tmp.transform(absPos);
-		b.add(tmp);
+		primitive = old;
+		if( flags.has(FIgnoreBounds) )
+			return b;
+		syncJoints();
+		if( skinData.vertexWeights == null )
+			cast(primitive, h3d.prim.HMDModel).loadSkin(skinData);
+		var absScale = getAbsPos().getScale(tmpVec);
+		var scale = Math.max(Math.max(absScale.x, absScale.y), absScale.z);
+		for( j in skinData.allJoints ) {
+			if( j.offsetRay < 0 ) continue;
+			var m = currentPalette[j.bindIndex];
+			var pt = j.offsets.getMin();
+			pt.transform(m);
+			b.addSpherePos(pt.x, pt.y, pt.z, j.offsetRay * scale);
+			var pt = j.offsets.getMax();
+			pt.transform(m);
+			b.addSpherePos(pt.x, pt.y, pt.z, j.offsetRay * scale);
+		}
+		return b;
+	}
+
+	public function getCurrentSkeletonBounds() {
+		syncJoints();
+		var b = new h3d.col.Bounds();
+		for( j in skinData.allJoints ) {
+			if( j.bindIndex < 0 ) continue;
+			var r = currentAbsPose[j.index];
+			b.addSpherePos(r.tx, r.ty, r.tz, 0);
+		}
 		return b;
 	}
 
@@ -162,6 +180,7 @@ class Skin extends MultiMaterial {
 					break;
 				}
 			skinShader = hasNormalMap ? new h3d.shader.SkinTangent() : new h3d.shader.Skin();
+			skinShader.fourBonesByVertex = skinData.bonesPerVertex == 4;
 			var maxBones = 0;
 			if( skinData.splitJoints != null ) {
 				for( s in skinData.splitJoints )
@@ -202,15 +221,18 @@ class Skin extends MultiMaterial {
 		syncJoints();
 	}
 
+	static var TMP_MAT = new h3d.Matrix();
+
 	@:noDebug
 	function syncJoints() {
 		if( !jointsUpdated ) return;
+		var tmpMat = TMP_MAT;
 		for( j in skinData.allJoints ) {
 			var id = j.index;
 			var m = currentAbsPose[id];
 			var r = currentRelPose[id];
 			var bid = j.bindIndex;
-			if( r == null ) r = j.defMat else if( j.retargetAnim ) { r._41 = j.defMat._41; r._42 = j.defMat._42; r._43 = j.defMat._43; }
+			if( r == null ) r = j.defMat else if( j.retargetAnim && enableRetargeting ) { tmpMat.load(r); r = tmpMat; r._41 = j.defMat._41; r._42 = j.defMat._42; r._43 = j.defMat._43; }
 			if( j.parent == null )
 				m.multiply3x4inline(r, absPos);
 			else
@@ -224,6 +246,7 @@ class Skin extends MultiMaterial {
 	}
 
 	override function emit( ctx : RenderContext ) {
+		syncJoints(); // In case sync was not called because of culling (eg fixedPosition)
 		if( splitPalette == null )
 			super.emit(ctx);
 		else {
@@ -270,26 +293,5 @@ class Skin extends MultiMaterial {
 			primitive.render(ctx.engine);
 		}
 	}
-
-	#if (hxbit && !macro && heaps_enable_serialize)
-	override function customUnserialize(ctx:hxbit.Serializer) {
-		super.customUnserialize(ctx);
-		var prim = hxd.impl.Api.downcast(primitive, h3d.prim.HMDModel);
-		if( prim == null ) throw "Cannot load skin primitive " + prim;
-		jointsUpdated = true;
-		skinShader = material.mainPass.getShader(h3d.shader.Skin);
-		@:privateAccess {
-			var lib = prim.lib;
-			for( m in lib.header.models )
-				if( lib.header.geometries[m.geometry] == prim.data ) {
-					var skinData = lib.makeSkin(m.skin);
-					skinData.primitive = prim;
-					setSkinData(skinData, false);
-					break;
-				}
-		}
-	}
-	#end
-
 
 }

@@ -53,7 +53,7 @@ class SceneEvents {
 	/**
 	 * Default cursor when there is no Interactive present under cursor.
 	 */
-	public var defaultCursor : Cursor = Default;
+	public var defaultCursor(default,set) : Cursor = Default;
 
 	public function new( ?window ) {
 		scenes = [];
@@ -288,9 +288,11 @@ class SceneEvents {
 		*/
 		if( event.kind == ERelease && pushList.length > 0 ) {
 			for( i in pushList ) {
-				if( i == null )
+				if( i == null ) {
+					event.kind = EReleaseOutside;
 					dispatchListeners(event);
-				else {
+					event.kind = ERelease;
+				} else {
 					var s = i.getInteractiveScene();
 					if( s == null ) continue;
 					event.kind = EReleaseOutside;
@@ -377,16 +379,26 @@ class SceneEvents {
 		}
 	}
 
-	public function startDrag( f : hxd.Event -> Void, ?onCancel : Void -> Void, ?refEvent : hxd.Event ) {
-		if( currentDrag != null && currentDrag.onCancel != null )
+	public function startCapture( f : hxd.Event -> Void, ?onCancel : Void -> Void, ?touchId : Int ) {
+		if ( currentDrag != null && currentDrag.onCancel != null )
 			currentDrag.onCancel();
-		currentDrag = { f : f, ref : refEvent == null ? null : refEvent.touchId, onCancel : onCancel };
+		currentDrag = { f: f, ref: touchId, onCancel: onCancel };
 	}
 
-	public function stopDrag() {
-		if( currentDrag != null && currentDrag.onCancel != null )
+	public function stopCapture() {
+		if ( currentDrag != null && currentDrag.onCancel != null )
 			currentDrag.onCancel();
 		currentDrag = null;
+	}
+
+	@:deprecated("Renamed to startCapture") @:dox(hide)
+	public inline function startDrag( f : hxd.Event -> Void, ?onCancel : Void -> Void, ?refEvent : hxd.Event ) {
+		startCapture(f, onCancel, refEvent != null ? refEvent.touchId : null);
+	}
+
+	@:deprecated("Renamed to stopCapture") @:dox(hide)
+	public inline function stopDrag() {
+		stopCapture();
 	}
 
 	public function getFocus() {
@@ -395,6 +407,14 @@ class SceneEvents {
 
 	public function updateCursor( i : Interactive ) {
 		if ( overList.indexOf(i) != -1 ) selectCursor();
+	}
+
+	function set_defaultCursor(c) {
+		if( Type.enumEq(c,defaultCursor) )
+			return c;
+		defaultCursor = c;
+		selectCursor();
+		return c;
 	}
 
 	function selectCursor() {

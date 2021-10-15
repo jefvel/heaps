@@ -46,6 +46,12 @@ class Window {
 	var curMouseY = 0;
 
 	static var CODEMAP = [for( i in 0...2048 ) i];
+	#if hlsdl
+	static inline var TOUCH_SCALE = #if (hl_ver >= version("1.12.0")) 10000 #else 100 #end;
+	#if heaps_vulkan
+	public static var USE_VULKAN = false;
+	#end
+	#end
 
 	function new(title:String, width:Int, height:Int, fixed:Bool = false) {
 		this.windowWidth = width;
@@ -53,7 +59,10 @@ class Window {
 		eventTargets = new List();
 		resizeEvents = new List();
 		#if hlsdl
-		final sdlFlags = if (!fixed) sdl.Window.SDL_WINDOW_SHOWN | sdl.Window.SDL_WINDOW_RESIZABLE else sdl.Window.SDL_WINDOW_SHOWN;
+		var sdlFlags = if (!fixed) sdl.Window.SDL_WINDOW_SHOWN | sdl.Window.SDL_WINDOW_RESIZABLE else sdl.Window.SDL_WINDOW_SHOWN;
+		#if heaps_vulkan
+		if( USE_VULKAN ) sdlFlags |= sdl.Window.SDL_WINDOW_VULKAN;
+		#end
 		window = new sdl.Window(title, width, height, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOWPOS_CENTERED, sdlFlags);
 		#elseif hldx
 		final dxFlags = if (!fixed) dx.Window.RESIZABLE else 0;
@@ -255,12 +264,24 @@ class Window {
 			else
 				((c & 0x0F) << 18) | (((e.keyCode >> 8) & 0x7F) << 12) | (((e.keyCode >> 16) & 0x7F) << 6) | ((e.keyCode >> 24) & 0x7F);
 		case TouchDown if (hxd.System.getValue(IsTouch)):
+			#if hlsdl
+				e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
+				e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
+			#end
 			eh = new Event(EPush, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
 		case TouchMove if (hxd.System.getValue(IsTouch)):
+			#if hlsdl
+				e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
+				e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
+			#end
 			eh = new Event(EMove, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
 		case TouchUp if (hxd.System.getValue(IsTouch)):
+			#if hlsdl
+				e.mouseX = Std.int(windowWidth * e.mouseX / TOUCH_SCALE);
+				e.mouseY = Std.int(windowHeight * e.mouseY / TOUCH_SCALE);
+			#end
 			eh = new Event(ERelease, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
 		#elseif hldx

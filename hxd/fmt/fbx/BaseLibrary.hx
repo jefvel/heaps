@@ -98,7 +98,7 @@ class BaseLibrary {
 	var namedConnect : Map<Int,Map<String,Int>>;
 	var invConnect : Map<Int,Array<Int>>;
 	var leftHand : Bool;
-	var defaultModelMatrixes : Map<String,DefaultMatrixes>;
+	var defaultModelMatrixes : Map<Int,DefaultMatrixes>;
 	var uvAnims : Map<String, Array<{ t : Float, u : Float, v : Float }>>;
 	var animationEvents : Array<{ frame : Int, data : String }>;
 	var isMaya : Bool;
@@ -121,9 +121,9 @@ class BaseLibrary {
 	public var skipObjects : Map<String,Bool>;
 
 	/**
-		Set how many bones per vertex should be created in skin data in makeObject(). Default is 3
+		Use 4 bones of influence per vertex instead of 3
 	**/
-	public var bonesPerVertex = 3;
+	public var fourBonesByVertex = false;
 
 	/**
 		If there are too many bones, the model will be split in separate render passes.
@@ -141,6 +141,11 @@ class BaseLibrary {
 		Convert centimeters to meters and axis to Z-up (Maya FBX export)
 	**/
 	public var normalizeScaleOrient : Bool = true;
+
+	/**
+		Keep high precision values. Might increase animation data size and compressed size.
+	**/
+	public var highPrecision : Bool = false;
 
 	public function new( fileName ) {
 		this.fileName = fileName;
@@ -183,7 +188,7 @@ class BaseLibrary {
 			updateModelScale();
 
 		// init properties
-		for( m in this.root.getAll("Objects.Model") ) {
+		for( m in getAllModels() ) {
 			for( p in m.getAll("Properties70.P") )
 				switch( p.props[0].toString() ) {
 				case "UDP3DSMAX" | "Events":
@@ -209,24 +214,50 @@ class BaseLibrary {
 		}
 	}
 
+	function toFloats( n : FbxNode ) {
+		return switch( n.props[0] ) {
+		case PInts(vl):
+			var vl = [for( v in vl ) (v:Float)];
+			n.props[0] = PFloats(vl);
+			vl;
+		case PFloats(vl):
+			vl;
+		default:
+			throw n.props[0]+" should be floats ";
+		}
+	}
+
+	function getAllModels() {
+		return this.root.getAll("Objects.Model");
+	}
+
+	function getRootModels() {
+		return [for( m in getAllModels() ) if( isRootModel(m) ) m];
+	}
+
+	function isRootModel( m ) {
+		return getParent(m,"Model",true) == null;
+	}
+
 	function updateModelScale() {
 		var unitScale = 1;
 		var originScale = 1;
 		var upAxis = 1;
-		var originAxis = 2;
+		var originalUpAxis = 2;
 		for( p in root.getAll("GlobalSettings.Properties70.P") ) {
 			switch( p.props[0].toString() ) {
 			case "UnitScaleFactor": unitScale = p.props[4].toInt();
 			case "OriginalUnitScaleFactor": originScale = p.props[4].toInt();
 			case "UpAxis": upAxis = p.props[4].toInt();
-			case "OriginalUpAxis": originAxis = p.props[4].toInt();
+			case "OriginalUpAxis": originalUpAxis = p.props[4].toInt();
 			default:
 			}
 		}
 		var scaleFactor : Float = unitScale == 100 && originScale == 1 ? 100 : 1;
-		var axisFlip = upAxis == 2 && originAxis == 1;
 		var geometryScaleFactor = scaleFactor;
-		// TODO : axisFlip
+
+		if( upAxis == 1 ) // Y-up
+			convertYupToZup(originalUpAxis);
 
 		var app = "";
 		for( p in root.getAll("FBXHeaderExtension.SceneInfo.Properties70.P") )
@@ -234,24 +265,11 @@ class BaseLibrary {
 			case "LastSaved|ApplicationName": app = p.props[4].toString();
 			default:
 			}
-		if( app.indexOf("Blender") >= 0 && unitScale == 1 && originScale == 1 )
-			scaleFactor *= 0.01; // Blender in meters exports FBX to centimeter
+		if( app.indexOf("Blender") >= 0 && unitScale == originScale )
+			scaleFactor = unitScale / 100; // Adjust blender output scaling
 
 		if( scaleFactor == 1 && geometryScaleFactor == 1 )
 			return;
-
-		function toFloats( n : FbxNode ) {
-			return switch( n.props[0] ) {
-			case PInts(vl):
-				var vl = [for( v in vl ) (v:Float)];
-				n.props[0] = PFloats(vl);
-				vl;
-			case PFloats(vl):
-				vl;
-			default:
-				throw n.props[0]+" should be floats ";
-			}
-		}
 
 		// scale on geometry
 		if( geometryScaleFactor != 1 ) {
@@ -266,8 +284,8 @@ class BaseLibrary {
 			return;
 
 		// scale on root models
-		for( m in this.root.getAll("Objects.Model") ) {
-			var isRoot = getParent(m,"Model",true) == null;
+		for( m in getAllModels() ) {
+			var isRoot = isRootModel(m);
 			for( p in m.getAll("Properties70.P") )
 				switch( p.props[0].toString() ) {
 				case "Lcl Scaling" if( isRoot ):
@@ -313,6 +331,37 @@ class BaseLibrary {
 				default:
 				}
 			}
+		}
+	}
+
+	function convertYupToZup( originalUpAxis : Int ) {
+		switch( originalUpAxis ) {
+			case 2: // Original Axis Z - Maya & 3DS Max
+				for( rootObject in getRootModels() ) {
+					var props = rootObject.get("Properties70");
+					for( c in props.childs ) {
+						if( c.props[0].toString() == "PreRotation" && c.props[4].toFloat() == -90 && c.props[5].toFloat()== 0 && c.props[6].toFloat() == 0 ) {
+							props.childs.remove(c);
+							break;
+						}
+					}
+				}
+			case -1, 1: // Original Axis -Y or Y - Blender & Maya
+				for( m in getRootModels() ) {
+					var needPreRot = true;
+					for( c in root.getAll("GlobalSettings.Properties70.P") ) {
+						if( c.props[0].toString() == "PreRotation" && c.props[4].toFloat() == 90 && c.props[5].toFloat()== 0 && c.props[6].toFloat() == 0 ) {
+							needPreRot = false;
+							break;
+						}
+					}
+					if( needPreRot ) {
+						var preRotProp : FbxNode = {name : "P", props : [PString("PreRotation"), PString("Vector3D"), PString("Vector"), PString(""), PFloat(90),PFloat(0),PFloat(0)], childs : []};
+						m.get("Properties70").childs.insert(0, preRotProp);
+					}
+				}
+			default:
+				throw "From Y-up to Z-up with orginalUpAxis = " + originalUpAxis + " not implemented.";
 		}
 	}
 
@@ -459,12 +508,12 @@ class BaseLibrary {
 		return root;
 	}
 
-	public function ignoreMissingObject( name : String ) {
-		var def = defaultModelMatrixes.get(name);
+	function ignoreMissingObject( id : Int ) {
+		var def = defaultModelMatrixes.get(id);
 		if( def == null ) {
 			def = new DefaultMatrixes();
 			def.wasRemoved = -2;
-			defaultModelMatrixes.set(name, def);
+			defaultModelMatrixes.set(id, def);
 		}
 	}
 
@@ -475,7 +524,7 @@ class BaseLibrary {
 		var hobjects = new Map<Int, TmpObject>();
 
 		hobjects.set(0, oroot);
-		for( model in root.getAll("Objects.Model") ) {
+		for( model in getAllModels() ) {
 			if( skipObjects.get(model.getName()) )
 				continue;
 			var mtype = model.getType();
@@ -613,7 +662,7 @@ class BaseLibrary {
 	public function mergeModels( modelNames : Array<String> ) {
 		if( modelNames.length <= 1 )
 			return;
-		var models = root.getAll("Objects.Model");
+		var models = getAllModels();
 		function getModel(name) {
 			for( m in models )
 				if( m.getName() == name )
@@ -728,9 +777,10 @@ class BaseLibrary {
 
 	function roundValues( data : Array<Float>, def : Float, mult : Float = 1. ) {
 		var hasValue = false;
+		var epsi = highPrecision ? 0 : 1e-3;
 		for( i in 0...data.length ) {
 			var v = data[i] * mult;
-			if( Math.abs(v - def) > 1e-3 )
+			if( Math.abs(v - def) > epsi )
 				hasValue = true;
 			else
 				v = def;
@@ -953,7 +1003,7 @@ class BaseLibrary {
 		// process UVs
 		if( uvAnims != null ) {
 			var modelByName = new Map();
-			for( obj in this.root.getAll("Objects.Model") )
+			for( obj in getAllModels() )
 				modelByName.set(obj.getName(), obj);
 			for( obj in uvAnims.keys() ) {
 				var frames = uvAnims.get(obj);
@@ -1196,7 +1246,7 @@ class BaseLibrary {
 	function autoMerge() {
 		// if we have multiple deformers on the same joint, let's merge the geometries
 		var toMerge = [], mergeGroups = new Map<Int,Array<FbxNode>>();
-		for( model in root.getAll("Objects.Model") ) {
+		for( model in getAllModels() ) {
 			if( skipObjects.get(model.getName()) )
 				continue;
 			var mtype = model.getType();
@@ -1247,7 +1297,9 @@ class BaseLibrary {
 		return keepJoints.get(j.name);
 	}
 
-	function createSkin( hskins : Map<Int,h3d.anim.Skin>, hgeom : Map<Int,{function vertexCount():Int;function setSkin(s:h3d.anim.Skin):Void;}>, rootJoints : Array<h3d.anim.Skin.Joint>, bonesPerVertex ) {
+	function createSkin( hskins : Map<Int,h3d.anim.Skin>, hgeom : Map<Int,{
+		function vertexCount():Int; function setSkin(s:h3d.anim.Skin):Void;
+	}>, rootJoints : Array<h3d.anim.Skin.Joint> ) {
 		var allJoints = [];
 		function collectJoints(j:h3d.anim.Skin.Joint) {
 			// collect subs first (allow easy removal of terminal unskinned joints)
@@ -1263,7 +1315,7 @@ class BaseLibrary {
 		for( j in iterJoints ) {
 			var jModel = ids.get(j.index);
 			var subDef = getParent(jModel, "Deformer", true);
-			var defMat = defaultModelMatrixes.get(jModel.getName());
+			var defMat = defaultModelMatrixes.get(jModel.getId());
 			j.defMat = defMat.toMatrix(leftHand);
 
 			if( subDef == null ) {
@@ -1288,7 +1340,7 @@ class BaseLibrary {
 				if( skin != null )
 					return skin;
 				var geom = hgeom.get(getParent(def, "Geometry").getId());
-				skin = new h3d.anim.Skin(null, geom.vertexCount(), bonesPerVertex);
+				skin = new h3d.anim.Skin(null, geom.vertexCount(), fourBonesByVertex ? 4 : 3);
 				geom.setSkin(skin);
 				hskins.set(def.getId(), skin);
 			}
@@ -1318,7 +1370,7 @@ class BaseLibrary {
 
 	function round(v:Float) {
 		if( v != v ) throw "NaN found";
-		return std.Math.fround(v * 131072) / 131072;
+		return highPrecision ? v : std.Math.fround(v * 131072) / 131072;
 	}
 
 	function updateDefaultMatrix( model : FbxNode, d : DefaultMatrixes ) {
@@ -1399,8 +1451,8 @@ class BaseLibrary {
 	}
 
 	function getDefaultMatrixes( model : FbxNode ) {
-		var name = model.getName();
-		var d = defaultModelMatrixes.get(name);
+		var id = model.getId();
+		var d = defaultModelMatrixes.get(id);
 		if( d != null )
 			return d;
 		d = new DefaultMatrixes();
@@ -1430,7 +1482,7 @@ class BaseLibrary {
 		if( model.getType() == "LimbNode" )
 			updateDefaultMatrix(model, d);
 
-		defaultModelMatrixes.set(name, d);
+		defaultModelMatrixes.set(id, d);
 		return d;
 	}
 
