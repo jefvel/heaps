@@ -374,13 +374,9 @@ class Console #if !macro extends h2d.Object #end {
 			}
 		}
 
-<<<<<<< HEAD
-		return commandBase + closestCommand;
-=======
 		if (hadShortKey && closestCommand != "")
 			closestCommand = String.fromCharCode(shortKeyChar) + closestCommand;
 		return closestCommand;
->>>>>>> 60a2e1a2cc6000af6eaec0d1da15ad9650775c4f
 	}
 
 	function handleKey( e : hxd.Event ) {
