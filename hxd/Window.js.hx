@@ -80,8 +80,9 @@ class Window {
 		else {
 			js.Browser.window.addEventListener("mousemove", onMouseMove);
 		}
-			
-		
+
+		var window = js.Browser.window;
+
 		element.addEventListener("mousedown", onMouseDown);
 		element.addEventListener("mouseup", onMouseUp);
 		element.addEventListener("mouseleave", onMouseLeave);
@@ -92,8 +93,8 @@ class Window {
 		element.addEventListener("keydown", onKeyDown);
 		element.addEventListener("keyup", onKeyUp);
 		element.addEventListener("keypress", onKeyPress);
-		element.addEventListener("blur", onFocus.bind(false));
-		element.addEventListener("focus", onFocus.bind(true));
+		window.addEventListener("blur", onFocus.bind(false));
+		window.addEventListener("focus", onFocus.bind(true));
 
 		if ((js.Browser.window:Dynamic).ResizeObserver != null) {
 			// Modern solution for canvas resize monitoring, supported in most browsers, but not Haxe API.
@@ -105,7 +106,9 @@ class Window {
 			js.Browser.window.addEventListener("resize", checkResize);
 		}
 
-		canvas.addEventListener("contextmenu", function(e){
+		haxe.Timer.delay(checkResize, 300);
+
+		canvas.addEventListener("contextmenu", function(e) {
 			e.stopPropagation();
 			if (e.button == 2) {
 				e.preventDefault();
@@ -121,7 +124,9 @@ class Window {
 			});
 			element.addEventListener("contextmenu",function(e) {
 				e.stopPropagation();
-				e.preventDefault();
+				if (e.button == 2) {
+					e.preventDefault();
+				}
 				return false;
 			});
 		} else {
@@ -421,9 +426,10 @@ class Window {
 		var fullscreen = m != Windowed;
 		if( (doc.fullscreenElement == elt) == fullscreen )
 			return Windowed;
-		if( m != Windowed )
-			elt.requestFullscreen();
-		else
+		if( m != Windowed ) {
+			elt.requestFullscreen({ navigationUI: "hide" });
+			js.Browser.window.screen.orientation.lock(LANDSCAPE);
+		} else
 			doc.exitFullscreen();
 
 		return m;
