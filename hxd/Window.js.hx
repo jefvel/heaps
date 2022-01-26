@@ -36,6 +36,7 @@ class Window {
 	var curH : Int;
 
 	var focused : Bool;
+	var observer : Dynamic;
 
 	/**
 		When enabled, the browser zoom does not affect the canvas.
@@ -47,7 +48,7 @@ class Window {
 		var customCanvas = canvas != null;
 		eventTargets = new List();
 		resizeEvents = new List();
-		
+
 		if( !js.Browser.supported ) {
 			canvasPos = { "width":0, "top":0, "left":0, "height":0 };
 			return;
@@ -76,7 +77,7 @@ class Window {
 		if( customCanvas ) {
 			canvas.addEventListener("mousemove", onMouseMove);
 		}
-			
+
 		else {
 			js.Browser.window.addEventListener("mousemove", onMouseMove);
 		}
@@ -98,7 +99,7 @@ class Window {
 
 		if ((js.Browser.window:Dynamic).ResizeObserver != null) {
 			// Modern solution for canvas resize monitoring, supported in most browsers, but not Haxe API.
-			var observer = js.Syntax.construct("ResizeObserver", function(e) {
+			observer = js.Syntax.construct("ResizeObserver", function(e) {
 				checkResize();
 			});
 			observer.observe(canvas);
@@ -150,6 +151,11 @@ class Window {
 	}
 
 	public function dispose() {
+		if( inst == this ) inst = null;
+		if ((js.Browser.window:Dynamic).ResizeObserver != null) {
+			observer.disconnect();
+			observer = null;
+		}
 	}
 
 	public dynamic function onClose() : Bool {
@@ -245,7 +251,7 @@ class Window {
 				if (customCanvas) canvas.requestPointerLock();
 				else js.Browser.window.document.documentElement.requestPointerLock();
 			}
-			
+
 		else {
 			if (customCanvas) canvas.ownerDocument.exitPointerLock();
 			else js.Browser.window.document.exitPointerLock();
@@ -315,7 +321,7 @@ class Window {
 			curMouseX = e.clientX;
 			curMouseY = e.clientY;
 		}
-		
+
 		event(new Event(EMove, mouseX, mouseY));
 	}
 
