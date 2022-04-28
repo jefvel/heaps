@@ -372,7 +372,7 @@ class TextInput extends Text {
 	override function draw(ctx:RenderContext) {
 		if( inputWidth != null ) {
 			var h = localToGlobal(new h2d.col.Point(inputWidth, font.lineHeight));
-			ctx.pushRenderZone(absX, absY, h.x - absX, h.y - absY);
+			ctx.clipRenderZone(absX, absY, h.x - absX, h.y - absY);
 		}
 
 		if( cursorIndex >= 0 && (text != cursorText || cursorIndex != cursorXIndex) ) {
@@ -382,6 +382,8 @@ class TextInput extends Text {
 			cursorX = calcTextWidth(text.substr(0, cursorIndex));
 			if( inputWidth != null && cursorX - scrollX >= inputWidth )
 				scrollX = cursorX - inputWidth + 1;
+			else if( cursorX < scrollX && cursorIndex > 0 )
+				scrollX = cursorX - hxd.Math.imin(inputWidth, Std.int(cursorX));
 			else if( cursorX < scrollX )
 				scrollX = cursorX;
 		}
