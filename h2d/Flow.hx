@@ -969,8 +969,8 @@ class Flow extends Object {
 			needReflow = true;
 
 		var oldW = realMinWidth, oldH = realMinHeight;
-		realMinWidth = if( minWidth == null && fillWidth ) Math.ceil(constraintWidth) else if( minWidth != null ) minWidth else -1;
-		realMinHeight = if( minHeight == null && fillHeight ) Math.ceil(constraintHeight) else if( minHeight != null ) minHeight else -1;
+		realMinWidth = if(fillWidth) hxd.Math.imax(Math.ceil(constraintWidth), minWidth != null ? minWidth : -1) else if( minWidth != null ) minWidth else -1;
+		realMinHeight = if(fillHeight) hxd.Math.imax(Math.ceil(constraintHeight), minHeight != null ? minHeight : -1) else if( minHeight != null ) minHeight else -1;
 		if(realMinWidth != oldW || realMinHeight != oldH)
 			needReflow = true;
 	}
@@ -1227,7 +1227,7 @@ class Flow extends Object {
 				if( !p.isAbsolute )
 					c.constraintSize(
 						isConstraintWidth && p.constraint ? ((p.autoSize != null ? Math.floor(autoWidth * p.autoSize / autoSum) : maxInWidth) - pw) / Math.abs(c.scaleX) : -1,
-						isConstraintHeight && p.constraint ? ((p.autoSize != null ? maxLineHeight * p.autoSize : maxInHeight) - ph) / Math.abs(c.scaleY) : -1
+						isConstraintHeight && p.constraint ? ((p.autoSize != null ? hxd.Math.imax(maxLineHeight, minLineHeight) * p.autoSize : maxInHeight) - ph) / Math.abs(c.scaleY) : -1
 					);
 
 				var b = getSize(c);
@@ -1389,7 +1389,7 @@ class Flow extends Object {
 				var ph = p.paddingTop + p.paddingBottom;
 				if( !p.isAbsolute )
 					c.constraintSize(
-						isConstraintWidth && p.constraint ? ((p.autoSize != null ? maxColWidth * p.autoSize : maxInWidth) - pw) / Math.abs(c.scaleX) : -1,
+						isConstraintWidth && p.constraint ? ((p.autoSize != null ? hxd.Math.imax(maxColWidth, minColWidth) * p.autoSize : maxInWidth) - pw) / Math.abs(c.scaleX) : -1,
 						isConstraintHeight && p.constraint ? ((p.autoSize != null ? Math.floor(autoHeight * p.autoSize / autoSum) : maxInHeight) - ph) / Math.abs(c.scaleY) : -1
 					);
 
