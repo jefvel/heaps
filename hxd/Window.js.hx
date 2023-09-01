@@ -124,11 +124,10 @@ class Window {
 				checkResize();
 			});
 			observer.observe(canvas);
-		} else {
-			js.Browser.window.addEventListener("resize", checkResize);
 		}
 
 		haxe.Timer.delay(checkResize, 300);
+		js.Browser.window.addEventListener("resize", checkResize);
 
 		js.Browser.document.addEventListener("pointerlockchange", onPointerLockChange);
 
