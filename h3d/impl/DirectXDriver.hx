@@ -76,9 +76,9 @@ class DirectXDriver extends h3d.impl.Driver {
 	var hasDeviceError = false;
 
 	var defaultTarget : RenderTargetView;
-	var defaultDepth : DepthBuffer;
-	var defaultDepthInst : h3d.mat.DepthBuffer;
-	var extraDepthInst : h3d.mat.DepthBuffer;
+	var defaultDepth : Texture;
+	var defaultDepthInst : h3d.mat.Texture;
+	var extraDepthInst : h3d.mat.Texture;
 
 	var viewport : hl.BytesAccess<hl.F32> = new hl.Bytes(4 * VIEWPORTS_ELTS);
 	var rects : hl.BytesAccess<Int> = new hl.Bytes(4 * RECTS_ELTS);
@@ -87,7 +87,7 @@ class DirectXDriver extends h3d.impl.Driver {
 	var offsets : Array<Int> = [];
 	var currentShader : CompiledShader;
 	var currentIndex : IndexBuffer;
-	var currentDepth : DepthBuffer;
+	var currentDepth : Texture;
 	var currentLayout : Layout;
 	var currentTargets = new hl.NativeArray<RenderTargetView>(16);
 	var currentTargetResources = new hl.NativeArray<ShaderResourceView>(16);
@@ -184,7 +184,8 @@ class DirectXDriver extends h3d.impl.Driver {
 		shaderVersion = if( version < 10 ) "3_0" else if( version < 11 ) "4_0" else "5_0";
 
 		Driver.iaSetPrimitiveTopology(TriangleList);
-		defaultDepthInst = new h3d.mat.DepthBuffer(-1, -1);
+		defaultDepthInst = new h3d.mat.Texture(-1, -1, Depth24Stencil8);
+		defaultDepthInst.name = "defaultDepth";
 		for( i in 0...VIEWPORTS_ELTS )
 			viewport[i] = 0;
 		for( i in 0...RECTS_ELTS )
@@ -207,6 +208,7 @@ class DirectXDriver extends h3d.impl.Driver {
 
 	override function resize(width:Int, height:Int)  {
 		if( defaultDepth != null ) {
+			defaultDepth.depthView.release();
 			defaultDepth.view.release();
 			defaultDepth.res.release();
 		}
@@ -221,14 +223,29 @@ class DirectXDriver extends h3d.impl.Driver {
 		var depthDesc = new Texture2dDesc();
 		depthDesc.width = width;
 		depthDesc.height = height;
-		depthDesc.format = depthStencilFormat;
-		depthDesc.bind = DepthStencil;
+		depthDesc.format = R24G8_TYPELESS;
+		depthDesc.usage = Default;
+		depthDesc.mipLevels = 1;
+		depthDesc.arraySize = 1;
+		depthDesc.sampleCount = 1;
+		depthDesc.sampleQuality = 0;
+		depthDesc.bind = DepthStencil | ShaderResource;
 		var depth = Driver.createTexture2d(depthDesc);
 		if( depth == null ) throw "Failed to create depthBuffer";
-		var depthView = Driver.createDepthStencilView(depth,depthStencilFormat);
-		defaultDepth = { res : depth, view : depthView };
+		var depthView = Driver.createDepthStencilView(depth,D24_UNORM_S8_UINT, false);
+		var readOnlyDepthView = Driver.createDepthStencilView(depth, D24_UNORM_S8_UINT, true);
+
+		var vdesc = new ShaderResourceViewDesc();
+		vdesc.format = R24_UNORM_X8_TYPELESS;
+		vdesc.dimension = Texture2D;
+		vdesc.arraySize = 1;
+		vdesc.start = 0;
+		vdesc.count = -1;
+		var shaderView = Driver.createShaderResourceView(depth, vdesc);
+
+		defaultDepth = { res : depth, view : shaderView, depthView : depthView, readOnlyDepthView : readOnlyDepthView, rt : null, mips : 0 };
 		@:privateAccess {
-			defaultDepthInst.b = defaultDepth;
+			defaultDepthInst.t = defaultDepth;
 			defaultDepthInst.width = width;
 			defaultDepthInst.height = height;
 		}
@@ -246,8 +263,8 @@ class DirectXDriver extends h3d.impl.Driver {
 		if( extraDepthInst != null ) @:privateAccess {
 			extraDepthInst.width = width;
 			extraDepthInst.height = height;
-			if( extraDepthInst.b != null ) disposeDepthBuffer(extraDepthInst);
-			extraDepthInst.b = allocDepthBuffer(extraDepthInst);
+			if( extraDepthInst.t != null ) disposeDepthBuffer(extraDepthInst);
+			extraDepthInst.t = allocDepthBuffer(extraDepthInst);
 		}
 	}
 
@@ -273,7 +290,7 @@ class DirectXDriver extends h3d.impl.Driver {
 				Driver.clearColor(currentTargets[i], color.r, color.g, color.b, color.a);
 		}
 		if( currentDepth != null && (depth != null || stencil != null) )
-			Driver.clearDepthStencilView(currentDepth.view, depth, stencil);
+			Driver.clearDepthStencilView(currentDepth.depthView, depth, stencil);
 	}
 
 	override function getDriverName(details:Bool) {
@@ -303,12 +320,13 @@ class DirectXDriver extends h3d.impl.Driver {
 
 	}
 
-	override function getDefaultDepthBuffer():h3d.mat.DepthBuffer {
+	override function getDefaultDepthBuffer():h3d.mat.Texture {
 		if( extraDepthInst == null ) @:privateAccess {
-			extraDepthInst = new h3d.mat.DepthBuffer(0, 0);
+			extraDepthInst = new h3d.mat.Texture(0, 0, Depth24Stencil8);
+			extraDepthInst.name = "extraDepth";
 			extraDepthInst.width = outputWidth;
 			extraDepthInst.height = outputHeight;
-			extraDepthInst.b = allocDepthBuffer(extraDepthInst);
+			extraDepthInst.t = allocDepthBuffer(extraDepthInst);
 		}
 		return extraDepthInst;
 	}
@@ -327,21 +345,36 @@ class DirectXDriver extends h3d.impl.Driver {
 		return { res : res, count : count, bits : bits  };
 	}
 
-	override function allocDepthBuffer( b : h3d.mat.DepthBuffer ) : DepthBuffer {
+	override function allocDepthBuffer( b : h3d.mat.Texture ) : Texture {
 		var depthDesc = new Texture2dDesc();
 		depthDesc.width = b.width;
 		depthDesc.height = b.height;
-		depthDesc.format = D24_UNORM_S8_UINT;
-		depthDesc.bind = DepthStencil;
+		depthDesc.mipLevels = 1;
+		depthDesc.arraySize = 1;
+		depthDesc.format = R24G8_TYPELESS;
+		depthDesc.sampleCount = 1;
+		depthDesc.sampleQuality = 0;
+		depthDesc.usage = Default;
+		depthDesc.bind = DepthStencil | ShaderResource;
 		var depth = Driver.createTexture2d(depthDesc);
 		if( depth == null )
 			return null;
-		return { res : depth, view : Driver.createDepthStencilView(depth,depthDesc.format) };
+		var vdesc = new ShaderResourceViewDesc();
+		vdesc.format = R24_UNORM_X8_TYPELESS;
+		vdesc.dimension = Texture2D;
+		vdesc.arraySize = 1;
+		vdesc.start = 0;
+		vdesc.count = -1;
+		var srv = Driver.createShaderResourceView(depth,vdesc);
+		var depthView = Driver.createDepthStencilView(depth,D24_UNORM_S8_UINT, false);
+		var readOnlyDepthView = Driver.createDepthStencilView(depth, D24_UNORM_S8_UINT, true);
+		return { res : depth, view : srv, depthView : depthView, readOnlyDepthView : readOnlyDepthView, rt : null, mips : 0 };
 	}
 
-	override function disposeDepthBuffer(b:h3d.mat.DepthBuffer) @:privateAccess {
-		var d = b.b;
-		b.b = null;
+	override function disposeDepthBuffer(b:h3d.mat.Texture) @:privateAccess {
+		var d = b.t;
+		b.t = null;
+		d.depthView.release();
 		d.view.release();
 		d.res.release();
 	}
@@ -355,7 +388,7 @@ class DirectXDriver extends h3d.impl.Driver {
 
 	override function isSupportedFormat( fmt : hxd.PixelFormat ) {
 		return switch( fmt ) {
-		case RGB8, RGB16F, ARGB, BGRA, SRGB: false;
+		case RGB8, RGB16F, ARGB, BGRA, SRGB, RGB16U: false;
 		default: true;
 		}
 	}
@@ -375,6 +408,9 @@ class DirectXDriver extends h3d.impl.Driver {
 		case RGB10A2: R10G10B10A2_UNORM;
 		case RG11B10UF: R11G11B10_FLOAT;
 		case SRGB_ALPHA: R8G8B8A8_UNORM_SRGB;
+		case R16U: R16_UNORM;
+		case RG16U: R16G16_UNORM;
+		case RGBA16U: R16G16B16A16_UNORM;
 		case S3TC(n):
 			switch( n ) {
 			case 1: BC1_UNORM;
@@ -626,7 +662,6 @@ class DirectXDriver extends h3d.impl.Driver {
 
 	override function uploadTexturePixels(t:h3d.mat.Texture, pixels:hxd.Pixels, mipLevel:Int, side:Int) {
 		pixels.convert(t.format);
-		pixels.setFlip(false);
 		if( hasDeviceError ) return;
 		if( mipLevel >= t.t.mips ) throw "Mip level outside texture range : " + mipLevel + " (max = " + (t.t.mips - 1) + ")";
 		var stride = @:privateAccess pixels.stride;
@@ -917,14 +952,22 @@ class DirectXDriver extends h3d.impl.Driver {
 	}
 
 	var tmpTextures = new Array<h3d.mat.Texture>();
-	override function setRenderTarget(tex:Null<h3d.mat.Texture>, layer = 0, mipLevel = 0) {
+	override function setRenderTarget(tex:Null<h3d.mat.Texture>, layer = 0, mipLevel = 0, depthBinding : h3d.Engine.DepthBinding = ReadWrite) {
 		if( tex == null ) {
 			curTexture = null;
 			currentDepth = defaultDepth;
 			currentTargets[0] = defaultTarget;
 			currentTargetResources[0] = null;
 			targetsCount = 1;
-			Driver.omSetRenderTargets(1, currentTargets, currentDepth.view);
+			var depthView = switch (depthBinding) {
+			case NotBound:
+				null;
+			case ReadOnly:
+				currentDepth.readOnlyDepthView;
+			default:
+				currentDepth.depthView;
+			}
+			Driver.omSetRenderTargets(1, currentTargets, depthView);
 			viewport[2] = outputWidth;
 			viewport[3] = outputHeight;
 			viewport[5] = 1.;
@@ -932,7 +975,7 @@ class DirectXDriver extends h3d.impl.Driver {
 			return;
 		}
 		tmpTextures[0] = tex;
-		_setRenderTargets(tmpTextures, layer, mipLevel);
+		_setRenderTargets(tmpTextures, layer, mipLevel, depthBinding);
 	}
 
 	function unbind( res ) {
@@ -948,13 +991,13 @@ class DirectXDriver extends h3d.impl.Driver {
 		}
 	}
 
-	override function setRenderTargets(textures:Array<h3d.mat.Texture>) {
-		_setRenderTargets(textures, 0, 0);
+	override function setRenderTargets(textures:Array<h3d.mat.Texture>, depthBinding : h3d.Engine.DepthBinding = ReadWrite) {
+		_setRenderTargets(textures, 0, 0, depthBinding);
 	}
 
-	function _setRenderTargets( textures:Array<h3d.mat.Texture>, layer : Int, mipLevel : Int ) {
+	function _setRenderTargets( textures:Array<h3d.mat.Texture>, layer : Int, mipLevel : Int, depthBinding : h3d.Engine.DepthBinding = ReadWrite ) {
 		if( textures.length == 0 ) {
-			setRenderTarget(null);
+			setRenderTarget(null, depthBinding);
 			return;
 		}
 		if( hasDeviceError )
@@ -963,7 +1006,7 @@ class DirectXDriver extends h3d.impl.Driver {
 		curTexture = textures[0];
 		if( tex.depthBuffer != null && (tex.depthBuffer.width != tex.width || tex.depthBuffer.height != tex.height) )
 			throw "Invalid depth buffer size : does not match render target size";
-		currentDepth = @:privateAccess (tex.depthBuffer == null ? null : tex.depthBuffer.b);
+		currentDepth = @:privateAccess (tex.depthBuffer == null ? null : tex.depthBuffer.t);
 		for( i in 0...textures.length ) {
 			var tex = textures[i];
 			if( tex.t == null ) {
@@ -993,11 +1036,40 @@ class DirectXDriver extends h3d.impl.Driver {
 				Driver.clearColor(rt, 0, 0, 0, 0);
 			}
 		}
-		Driver.omSetRenderTargets(textures.length, currentTargets, currentDepth == null ? null : currentDepth.view);
+		var depthView = if ( currentDepth == null )
+			null;
+		else {
+			switch ( depthBinding ) {
+			case NotBound:
+				null;
+			case ReadOnly:
+				currentDepth.readOnlyDepthView;
+			default:
+				currentDepth.depthView;
+			}
+		}
+		Driver.omSetRenderTargets(textures.length, currentTargets, depthView);
 		targetsCount = textures.length;
 
 		var w = tex.width >> mipLevel; if( w == 0 ) w = 1;
 		var h = tex.height >> mipLevel; if( h == 0 ) h = 1;
+		viewport[2] = w;
+		viewport[3] = h;
+		viewport[5] = 1.;
+		Driver.rsSetViewports(1, viewport);
+	}
+
+	override function setDepth( depthBuffer : h3d.mat.Texture ) {
+		if( hasDeviceError )
+			return;
+		currentDepth = @:privateAccess (depthBuffer == null ? null : depthBuffer.t);
+		depthBuffer.lastFrame = frame;
+		unbind(currentDepth.view);
+		Driver.omSetRenderTargets(0, null, currentDepth.depthView);
+		targetsCount = 0;
+
+		var w = depthBuffer.width; if( w == 0 ) w = 1;
+		var h = depthBuffer.height; if( h == 0 ) h = 1;
 		viewport[2] = w;
 		viewport[3] = h;
 		viewport[5] = 1.;
@@ -1263,7 +1335,7 @@ class DirectXDriver extends h3d.impl.Driver {
 				t.lastFrame = frame;
 
 				var view = t.t.view;
-				if( view != state.resources[i] ) {
+				if( view != state.resources[i] || t.t.depthView != null ) {
 					state.resources[i] = view;
 					max = i;
 					if( start < 0 ) start = i;

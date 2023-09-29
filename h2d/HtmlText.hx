@@ -72,6 +72,12 @@ class HtmlText extends Text {
 		If not set, uncondensed whitespace is left as is, as well as line-breaks.
 	**/
 	public var condenseWhite(default,set) : Bool = true;
+
+	/**
+		When enabled, nodes that create interactives will propagate events
+	**/
+	public var propagateInteractiveNode(default,set) : Bool = false;
+
 	/**
 		The spacing after `<img>` tags in pixels.
 	**/
@@ -169,6 +175,16 @@ class HtmlText extends Text {
 		Called on a <a> tag click
 	**/
 	public dynamic function onHyperlink(url:String) : Void {
+	}
+	/**
+		Called on a <a> tag over
+	**/
+	public dynamic function onOverHyperlink(url:String) : Void {
+	}
+	/**
+		Called on a <a> tag out
+	**/
+	public dynamic function onOutHyperlink(url:String) : Void {
 	}
 
 	/**
@@ -589,13 +605,20 @@ class HtmlText extends Text {
 	}
 
 	function addNode( e : Xml, font : Font, align : Align, rebuild : Bool, metrics : Array<LineInfo> ) {
-		inline function createInteractive() {
+		function createInteractive() {
 			if(aHrefs == null || aHrefs.length == 0)
 				return;
-			aInteractive = new Interactive(0, metrics[sizePos].height, this);
+			aInteractive = new Interactive(0, metrics[sizePos].baseLine, this);
+			aInteractive.propagateEvents = propagateInteractiveNode;
 			var href = aHrefs[aHrefs.length-1];
 			aInteractive.onClick = function(event) {
 				onHyperlink(href);
+			}
+			aInteractive.onOver = function(event) {
+				onOverHyperlink(href);
+			}
+			aInteractive.onOut = function(event) {
+				onOutHyperlink(href);
 			}
 			aInteractive.x = xPos;
 			aInteractive.y = yPos;
@@ -802,6 +825,14 @@ class HtmlText extends Text {
 		return value;
 	}
 
+	function set_propagateInteractiveNode(value: Bool) {
+		if ( this.propagateInteractiveNode != value ) {
+			this.propagateInteractiveNode = value;
+			rebuild();
+		}
+		return value;
+	}
+
 	function set_imageVerticalAlign(align) {
 		if ( this.imageVerticalAlign != align ) {
 			this.imageVerticalAlign = align;
@@ -821,7 +852,7 @@ class HtmlText extends Text {
 	override function getBoundsRec( relativeTo : Object, out : h2d.col.Bounds, forSize : Bool ) {
 		if( forSize )
 			for( i in elements )
-				if( hxd.impl.Api.isOfType(i,h2d.Bitmap) )
+				if( hxd.impl.Api.isOfType(i,h2d.Bitmap) || hxd.impl.Api.isOfType(i,h2d.Interactive) )
 					i.visible = false;
 		super.getBoundsRec(relativeTo, out, forSize);
 		if( forSize )

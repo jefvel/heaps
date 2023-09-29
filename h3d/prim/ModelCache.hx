@@ -159,7 +159,7 @@ class ModelCache {
 		} else {
 			local3d = new h3d.scene.Object();
 		}
-		var ctx2 = p.make(parent);
+		var ctx2 = p.make(local3d);
 		if( parent != null ) {
 			// only return object if a single child was added
 			// if not - multiple children were added and cannot be returned as a single object

@@ -398,9 +398,13 @@ class Renderer extends h3d.scene.Renderer {
 		textures.ldr = allocTarget("ldrOutput");
 	}
 
+	public function getPbrDepth() {
+		return textures.depth;
+	}
+
 	function initGlobals() {
 		ctx.setGlobal("albedoMap", { texture : textures.albedo, channel : hxsl.Channel.R });
-		ctx.setGlobal("depthMap", { texture : textures.depth, channel : hxsl.Channel.R });
+		ctx.setGlobal("depthMap", { texture : getPbrDepth(), channel : hxsl.Channel.R });
 		ctx.setGlobal("normalMap", { texture : textures.normal, channel : hxsl.Channel.R });
 		ctx.setGlobal("occlusionMap", { texture : textures.pbr, channel : hxsl.Channel.B });
 		ctx.setGlobal("hdrMap", textures.hdr);
@@ -425,7 +429,7 @@ class Renderer extends h3d.scene.Renderer {
 		pbrProps.albedoTex = textures.albedo;
 		pbrProps.normalTex = textures.normal;
 		pbrProps.pbrTex = textures.pbr;
-		pbrProps.depthTex = textures.depth;
+		pbrProps.depthTex = getPbrDepth();
 		#if !MRT_low
 		pbrProps.otherTex = textures.other;
 		#end
@@ -525,15 +529,21 @@ class Renderer extends h3d.scene.Renderer {
 		ctx.engine.popTarget();
 	}
 
+	function getPbrRenderTargets( depth : Bool ) {
+		if ( depth )
+			return [textures.albedo, textures.normal, textures.pbr #if !MRT_low , textures.other #end, getPbrDepth()];
+		return [textures.albedo, textures.normal, textures.pbr #if !MRT_low , textures.other #end];
+	}
+
 	override function render() {
 		beginPbr();
 		setTarget(textures.depth);
 		ctx.engine.clearF(new h3d.Vector(1));
 
-		setTargets([textures.albedo,textures.normal,textures.pbr#if !MRT_low ,textures.other #end]);
+		setTargets(getPbrRenderTargets(false));
 		clear(0, 1, 0);
 
-		setTargets([textures.albedo,textures.normal,textures.pbr#if !MRT_low ,textures.other #end,textures.depth]);
+		setTargets(getPbrRenderTargets(true));
 
 		begin(MainDraw);
 		renderPass(output, get("terrain"));
@@ -555,7 +565,7 @@ class Renderer extends h3d.scene.Renderer {
 		begin(Forward);
 		var ls = hxd.impl.Api.downcast(getLightSystem(), h3d.scene.pbr.LightSystem);
 		ls.forwardMode = true;
-		setTargets([textures.hdr, textures.depth]);
+		setTargets([textures.hdr, getPbrDepth()]);
 		renderPass(colorDepthOutput, get("forward"));
 		setTarget(textures.hdr);
 		renderPass(defaultPass, get("forwardAlpha"), backToFront);

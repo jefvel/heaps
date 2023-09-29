@@ -360,6 +360,72 @@ class Key {
 		var c = keyCode;
 		if (keyNames[c] != null) {
 			return keyNames[c];
+		return switch( c ) {
+		case BACKSPACE: "Backspace";
+		case TAB: "Tab";
+		case ENTER: "Enter";
+		case SHIFT: "Shift";
+		case CTRL: "Ctrl";
+		case ALT: "Alt";
+		case ESCAPE: "Escape";
+		case SPACE: "Space";
+		case PGUP: "PageUp";
+		case PGDOWN: "PageDown";
+		case END: "End";
+		case HOME: "Home";
+		case LEFT: "Left";
+		case UP: "Up";
+		case RIGHT: "Right";
+		case DOWN: "Down";
+		case INSERT: "Insert";
+		case DELETE: "Delete";
+		case NUMPAD_MULT: "NumPad*";
+		case NUMPAD_ADD: "NumPad+";
+		case NUMPAD_ENTER: "NumPadEnter";
+		case NUMPAD_SUB: "NumPad-";
+		case NUMPAD_DOT: "NumPad.";
+		case NUMPAD_DIV: "NumPad/";
+		case LSHIFT: "LShift";
+		case RSHIFT: "RShift";
+		case LCTRL: "LCtrl";
+		case RCTRL: "RCtrl";
+		case LALT: "LAlt";
+		case RALT: "RAlt";
+		case QWERTY_TILDE: "Tilde";
+		case QWERTY_MINUS: "Minus";
+		case QWERTY_EQUALS: "Equals";
+		case QWERTY_BRACKET_LEFT: "BracketLeft";
+		case QWERTY_BRACKET_RIGHT: "BracketRight";
+		case QWERTY_SEMICOLON: "Semicolon";
+		case QWERTY_QUOTE: "Quote";
+		case QWERTY_BACKSLASH: "Backslash";
+		case QWERTY_COMMA: "Comma";
+		case QWERTY_PERIOD: "Period";
+		case QWERTY_SLASH: "Slash";
+		case INTL_BACKSLASH: "IntlBackslash";
+		case LEFT_WINDOW_KEY: "LeftWindowKey";
+		case RIGHT_WINDOW_KEY: "RightWindowKey";
+		case CONTEXT_MENU: "ContextMenu";
+		case PAUSE_BREAK: "PauseBreak";
+		case CAPS_LOCK: "CapsLock";
+		case SCROLL_LOCK: "ScrollLock";
+		case NUM_LOCK: "NumLock";
+		case MOUSE_LEFT: "MouseLeft";
+		case MOUSE_MIDDLE: "MouseMiddle";
+		case MOUSE_RIGHT: "MouseRight";
+		case MOUSE_BACK: "Mouse3";
+		case MOUSE_FORWARD: "Mouse4";
+		default:
+			if( c >= NUMBER_0 && c <= NUMBER_9 )
+				""+(c - NUMBER_0);
+			else if( c >= NUMPAD_0 && c <= NUMPAD_9 )
+				"NumPad"+(c - NUMPAD_0);
+			else if( c >= A && c <= Z )
+				String.fromCharCode("A".code + c - A);
+			else if( c >= F1 && c <= F24 )
+				"F" + (c - F1 + 1);
+			else
+				null;
 		}
 
 		if( c >= A && c <= Z )

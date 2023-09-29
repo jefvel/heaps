@@ -194,7 +194,7 @@ class ConvertTGA2PNG extends Convert {
 			}
 		switch( r.header.imageOrigin ) {
 		case BottomLeft:
-			pix.flags.set(FlipY);
+			pix.flipY();
 		case TopLeft:
 		default:
 			throw "Not supported "+r.header.imageOrigin;
@@ -247,6 +247,9 @@ class CompressIMG extends Convert {
 		"RGBA16F" => "R16G16B16A16_FLOAT",
 		"RGBA32F" => "R32G32B32A32_FLOAT",
 		"RGBA" => "R8G8B8A8_UNORM",
+		"R16U" => "R16_UNORM",
+		"RG16U" => "R16G16_UNORM",
+		"RGBA16U" => "R16G16B16A16_UNORM",
 	];
 
 	function makeImage( path : String ) {
@@ -299,7 +302,16 @@ class CompressIMG extends Convert {
 			try sys.FileSystem.deleteFile(tmpFile) catch( e : Dynamic ) {};
 			try sys.FileSystem.deleteFile(dstPath) catch( e : Dynamic ) {};
 			sys.io.File.copy(srcPath, tmpFile);
-			var args = ["-f", tcFmt, "-y", "-nologo", tmpFile];
+
+			var args = [
+				"-f",
+				tcFmt,
+				"-y",
+				"-nologo",
+				"-srgb", // Convert srgb to linear color space if target format doesn't support srgb (i.e from convertig from PNG to dds RGBA)
+				tmpFile
+			];
+
 			if( !mips ) args = ["-m", "1"].concat(args);
 			command("texconv", args);
 			sys.FileSystem.deleteFile(tmpFile);
@@ -317,7 +329,7 @@ class CompressIMG extends Convert {
 				for ( layer in 0...info.layerCount ) {
 					var layerPixels = [];
 					for( mip in 0...info.mipLevels ) {
-						var pixels = image.getPixels(null, null, layer * info.mipLevels + mip);
+						var pixels = image.getPixels(null, layer * info.mipLevels + mip);
 						layerPixels.push(pixels);
 					}
 					var layerBytes = hxd.Pixels.toDDSLayers(layerPixels);
@@ -333,24 +345,11 @@ class CompressIMG extends Convert {
 				srcBytes = oldBytes;
 				srcPath = oldPath;
 				var convertPixels = [];
-				var format = null;
 				for ( layer in 0...info.layerCount ) {
-					var layerPath = null;
-					var image = null;
-					for ( fmt in ["BC1", "BC3"] ) {
-						try {
-							layerPath = dstPath + path.file + "_" + layer +"_dds_"+ fmt + "." + path.ext;
-							image = makeImage(layerPath);
-						} catch(e : Dynamic) {}
-						if ( image != null ) {
-							format = fmt;
-							break;
-						}
-					}
-					if ( image == null )
-						throw "Unsupported format";
+					var layerPath = dstPath + path.file + "_" + layer +"_dds_"+ format + "." + path.ext;
+					var image = makeImage(layerPath);
 					for ( mip in 0... info.mipLevels) {
-						var pixels = image.getPixels(null, null, mip);
+						var pixels = image.getPixels(null, mip);
 						convertPixels.push(pixels);
 					}
 					sys.FileSystem.deleteFile(layerPath);

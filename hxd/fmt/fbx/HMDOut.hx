@@ -118,8 +118,9 @@ class HMDOut extends BaseLibrary {
 			throw "Failed to call 'mikktspace' executable required to generate tangent data. Please ensure it's in your PATH";
 		}
 		var bytes = sys.io.File.getBytes(outFile);
-		var arr = [];
-		for( i in 0...index.vidx.length*4 )
+		var size = index.vidx.length*4;
+		var arr = new hxd.FloatBuffer(size);
+		for( i in 0...size )
 			arr[i] = bytes.getFloat(i << 2);
 		sys.FileSystem.deleteFile(fileName);
 		sys.FileSystem.deleteFile(outFile);
