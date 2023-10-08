@@ -879,12 +879,13 @@ class DX12Driver extends h3d.impl.Driver {
 		return null;
 	}
 
-	function compileSource( sh : hxsl.RuntimeShader.RuntimeShaderData, profile, baseRegister ) {
+	function compileSource( sh : hxsl.RuntimeShader.RuntimeShaderData, profile, baseRegister, rootStr = "" ) {
 		var args = [];
 		var out = new hxsl.HlslOut();
 		out.baseRegister = baseRegister;
 		if ( sh.code == null ) {
 			sh.code = out.run(sh.data);
+			sh.code = rootStr + sh.code;
 		}
 		var bytes = getBinaryPayload(sh.vertex, sh.code);
 		if ( bytes == null ) {
@@ -1094,8 +1095,9 @@ class DX12Driver extends h3d.impl.Driver {
 		c.vertexRegisters = res.vertexRegisters;
 		c.fragmentRegisters = res.fragmentRegisters;
 
-		var vs = compileSource(shader.vertex, "vs_6_0", 0);
-		var ps = compileSource(shader.fragment, "ps_6_0", res.fragmentRegStart);
+		var rootStr = stringifyRootSignature(res.sign, "ROOT_SIGNATURE", res.params);
+		var vs = compileSource(shader.vertex, "vs_6_0", 0, rootStr);
+		var ps = compileSource(shader.fragment, "ps_6_0", res.fragmentRegStart, rootStr);
 
 		var signSize = 0;
 		var signBytes = Driver.serializeRootSignature(res.sign, 1, signSize);
@@ -1575,19 +1577,23 @@ class DX12Driver extends h3d.impl.Driver {
 					if( t.flags.has(Cube) ) {
 						var desc = tmp.texCubeSRV;
 						desc.format = t.t.format;
+						desc.mostDetailedMip = t.startingMip;
 						tdesc = desc;
 					} else if( t.flags.has(IsArray) ) {
 						var desc = tmp.tex2DArraySRV;
 						desc.format = t.t.format;
 						desc.arraySize = t.layerCount;
+						desc.mostDetailedMip = t.startingMip;
 						tdesc = desc;
 					} else if ( t.isDepth() ) {
 						var desc = tmp.tex2DSRV;
 						desc.format = R24_UNORM_X8_TYPELESS;
+						desc.mostDetailedMip = t.startingMip;
 						tdesc = desc;
 					} else {
 						var desc = tmp.tex2DSRV;
 						desc.format = t.t.format;
+						desc.mostDetailedMip = t.startingMip;
 						tdesc = desc;
 					}
 					t.lastFrame = frameCount;
