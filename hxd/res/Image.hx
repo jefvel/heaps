@@ -287,7 +287,12 @@ class Image extends Resource {
 			}
 		}
 
+		customCheckInfo(this);
+
 		return inf;
+	}
+
+	public static dynamic function customCheckInfo(i : Image) {
 	}
 
 	public function getPixels( ?fmt : PixelFormat, ?index : Int ) {
@@ -624,7 +629,11 @@ class Image extends Resource {
 		if( DEFAULT_FILTER != Linear ) tex.filter = DEFAULT_FILTER;
 		tex.setName(entry.path);
 		setupTextureFlags(tex);
-		loadTexture();
+		// DirectX12 texture array triggers an access violation.
+		if ( tex.flags.has(IsArray) || !tex.flags.has(LazyLoading) )
+			loadTexture();
+		else
+			tex.realloc = () -> loadTexture();
 		return tex;
 	}
 
