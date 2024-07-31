@@ -35,7 +35,10 @@ class DynamicShader extends Shader {
 	function addVarIndex(v:hxsl.Ast.TVar, ?access : Access, ?defObj : Dynamic ) {
 		if( v.kind != Param )
 			return;
-		var isFloat = v.type == TFloat && access == null;
+		var isFloat = switch(v.type) {
+			case TFloat, TInt: access == null;
+			default: false;
+		}
 		var vid = isFloat ? floats.length : values.length;
 		if( access != null )
 			access = new Access(Structure, access.index, access.fields.copy());
@@ -59,6 +62,8 @@ class DynamicShader extends Shader {
 		}
 		var value : Dynamic = null;
 		switch( v.type ) {
+		case TVec(4,_):
+			value = new h3d.Vector4();
 		case TVec(_):
 			value = new h3d.Vector();
 		case TMat3, TMat4, TMat3x4:
@@ -85,6 +90,10 @@ class DynamicShader extends Shader {
 		var vidx = accesses.length;
 		varIndexes.set(v.id, vidx);
 		accesses.push(access == null ? new Access(isFloat?Float:Dynamic,vid,null) : access);
+	}
+
+	public function getParamIndex( p : hxsl.Ast.TVar ) : Int {
+		return varIndexes.get(p.id);
 	}
 
 	override function getParamValue(index:Int) : Dynamic {

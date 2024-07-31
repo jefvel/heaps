@@ -75,7 +75,7 @@ class DirShadowMap extends Shadows {
 				var b = m.primitive.getBounds();
 				if( b.xMin > b.xMax ) return;
 
-				var absPos = Std.isOfType(m.primitive, h3d.prim.Instanced) ? identity : m.getAbsPos();
+				var absPos = m.primitive is h3d.prim.Instanced ? identity : m.getAbsPos();
 				if( autoZPlanes ) {
 					btmp.load(b);
 					btmp.transform(absPos);
@@ -186,11 +186,6 @@ class DirShadowMap extends Shadows {
 		bounds.scaleCenter(1.01);
 	}
 
-	override function setGlobals() {
-		super.setGlobals();
-		cameraViewProj = getShadowProj();
-	}
-
 	override function syncShader(texture) {
 		dshader.shadowMap = texture;
 		dshader.shadowMapChannel = format == h3d.mat.Texture.nativeFormat ? PackedFloat : R;
@@ -266,11 +261,16 @@ class DirShadowMap extends Shadows {
 	}
 
 	function processShadowMap( passes, tex, ?sort) {
-		if ( tex.isDepth() )
+		var prevViewProj = @:privateAccess ctx.cameraViewProj;
+		@:privateAccess ctx.cameraViewProj = getShadowProj();
+		if ( tex.isDepth() ) {
 			ctx.engine.pushDepth(tex);
-		else
+			ctx.engine.clear(null, 1.0);
+		}
+		else {
 			ctx.engine.pushTarget(tex);
-		ctx.engine.clear(0xFFFFFF, 1.0);
+			ctx.engine.clear(0xFFFFFF, 1.0);
+		}
 		super.draw(passes, sort);
 
 		var doBlur = blur.radius > 0 && (mode != Mixed || !ctx.computingStatic);
@@ -280,7 +280,9 @@ class DirShadowMap extends Shadows {
 
 		ctx.engine.popTarget();
 
-		if( mode == Mixed && !ctx.computingStatic ) {
+		if( mode == Mixed && !ctx.computingStatic && staticTexture != null && !staticTexture.isDisposed() ) {
+			if ( staticTexture.width != tex.width )
+				throw "Static shadow map doesnt match dynamic shadow map";
 			var merge = ctx.textures.allocTarget("mergedDirShadowMap", size, size, false, format);
 			mergePass.shader.texA = tex;
 			mergePass.shader.texB = staticTexture;
@@ -303,6 +305,9 @@ class DirShadowMap extends Shadows {
 				ctx.engine.popTarget();
 			}
 		}
+
+		@:privateAccess ctx.cameraViewProj = prevViewProj;
+
 		return tex;
 	}
 
@@ -385,13 +390,19 @@ class DirShadowMap extends Shadows {
 			return;
 		g.clear();
 
-		drawBounds(lightCamera, 0xffffff);
+		drawBounds(lightCamera.getInverseViewProj(), 0xffffff);
 	}
 
-	function drawBounds(camera : h3d.Camera, color : Int) {
+	function drawBounds(invViewModel : h3d.Matrix, color : Int) {
 
-		var nearPlaneCorner = [camera.unproject(-1, 1, 0), camera.unproject(1, 1, 0), camera.unproject(1, -1, 0), camera.unproject(-1, -1, 0)];
-		var farPlaneCorner = [camera.unproject(-1, 1, 1), camera.unproject(1, 1, 1), camera.unproject(1, -1, 1), camera.unproject(-1, -1, 1)];
+		inline function unproject(screenX, screenY, camZ) {
+			var p = new h3d.Vector(screenX, screenY, camZ);
+			p.project(invViewModel);
+			return p;
+		}
+
+		var nearPlaneCorner = [unproject(-1, 1, 0), unproject(1, 1, 0), unproject(1, -1, 0), unproject(-1, -1, 0)];
+		var farPlaneCorner = [unproject(-1, 1, 1), unproject(1, 1, 1), unproject(1, -1, 1), unproject(-1, -1, 1)];
 
 		g.lineStyle(1, color);
 

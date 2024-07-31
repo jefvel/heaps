@@ -8,6 +8,7 @@ class Joint extends Object {
 		super(null);
 		name = j.name;
 		this.skin = skin;
+		lastFrame = -1; // force first sync
 		// fake parent
 		this.parent = skin;
 		this.index = j.index;
@@ -192,10 +193,14 @@ class Skin extends MultiMaterial {
 				skinShader.MaxBones = maxBones;
 			for( m in materials )
 				if( m != null ) {
-					if( m.normalMap != null )
+					var s = m.mainPass.getShader(h3d.shader.SkinTangent);
+					if ( s != null )
+						m.mainPass.removeShader(s);
+					if( m.normalMap != null ) {
 						@:privateAccess m.mainPass.addShaderAtIndex(skinShader, m.mainPass.getShaderIndex(m.normalShader) + 1);
-					else
+					} else {
 						m.mainPass.addShader(skinShader);
+					}
 					if( skinData.splitJoints != null ) m.mainPass.dynamicParameters = true;
 				}
 		}
@@ -247,6 +252,7 @@ class Skin extends MultiMaterial {
 	}
 
 	override function emit( ctx : RenderContext ) {
+		calcScreenRatio(ctx);
 		syncJoints(); // In case sync was not called because of culling (eg fixedPosition)
 		if( splitPalette == null )
 			super.emit(ctx);
@@ -289,7 +295,7 @@ class Skin extends MultiMaterial {
 		} else {
 			var i = ctx.drawPass.index;
 			skinShader.bonesMatrixes = splitPalette[i];
-			primitive.selectMaterial(i);
+			primitive.selectMaterial(i, primitive.screenRatioToLod(curScreenRatio));
 			ctx.uploadParams();
 			primitive.render(ctx.engine);
 		}

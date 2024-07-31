@@ -8,6 +8,7 @@ private class QueryObject {
 	public var value : Float;
 	public var name : String;
 	public var drawCalls : Int;
+	public var dispatches : Int;
 	public var next : QueryObject;
 
 	public function new() {
@@ -34,6 +35,7 @@ private class StatsObject {
 	public var name : String;
 	public var time : Float;
 	public var drawCalls : Int;
+	public var dispatches : Int;
 	public var next : StatsObject;
 	public var xPos : Int;
 	public var xSize : Int;
@@ -66,6 +68,9 @@ class Benchmark extends h2d.Graphics {
 	public var smoothTime = 0.95;
 
 	public var measureCpu = false;
+	public var displayTriangleCount = true;
+
+	public var measureCpuThread: sys.thread.Thread = null;
 
 	var tip : h2d.Text;
 	var tipCurrent : StatsObject;
@@ -150,10 +155,23 @@ class Benchmark extends h2d.Graphics {
 	}
 
 	function syncTip(s:StatsObject) {
-		if( s == null )
-			tip.text = "total "+engine.drawCalls+" draws "+hxd.Math.fmt(engine.drawTriangles/1000000)+" Mtri";
-		else
-			tip.text = s.name+"( " + Std.int(s.time / 1e6) + "." + StringTools.lpad(""+(Std.int(s.time/1e4)%100),"0",2) + " ms " + s.drawCalls + " draws )";
+		inline function fmt(i : Int, n : String) {
+			return i != 0 ? (i + ' ${n} ') : "";
+		}
+		if( s == null ) {
+			tip.text = "total "+fmt(engine.drawCalls,"draws")+ fmt(engine.dispatches, "dispatches");
+			if ( displayTriangleCount )
+				tip.text += hxd.Math.fmt(engine.drawTriangles/1000000)+" Mtri";
+		}
+		else {
+			var t = s.name + "( " + Std.int(s.time / 1e6) + "." + StringTools.lpad(""+(Std.int(s.time/1e4)%100),"0",2) + " ms";
+			if (measureCpuThread == null) {
+				t += " " + fmt(s.drawCalls, "draws")+ fmt(s.dispatches, "dispatches");
+			}
+			t += ")";
+
+			tip.text = t;
+		}
 		var tw = tip.textWidth + 10;
 		var tx = s == null ? curWidth : s.xPos + ((s.xSize - tw) * .5);
 		if( tx + tw > curWidth ) tx = curWidth - tw;
@@ -161,7 +179,7 @@ class Benchmark extends h2d.Graphics {
 		if( hxd.Math.abs(tip.parent.x - tx) > 5 ) tip.parent.x = Std.int(tx);
 	}
 
-	public function begin() {
+	public function begin(withVisual=true) {
 
 		if( !enable ) return;
 
@@ -181,7 +199,7 @@ class Benchmark extends h2d.Graphics {
 		var changed = false;
 		while( waitFrames.length > 0 ) {
 			var q = waitFrames[0];
-			if( !q.isAvailable() )
+			if( measureCpuThread == null && !q.isAvailable() )
 				break;
 			waitFrames.shift();
 
@@ -205,6 +223,8 @@ class Benchmark extends h2d.Graphics {
 					totalTime += dt;
 					s.drawCalls = prev.drawCalls - q.drawCalls;
 					if( s.drawCalls < 0 ) s.drawCalls = 0;
+					s.dispatches = prev.dispatches - q.dispatches;
+					if ( s.dispatches < 0 ) s.dispatches = 0;
 				}
 				// recycle
 				var n = q.next;
@@ -223,12 +243,14 @@ class Benchmark extends h2d.Graphics {
 						if( vst > 0 ) {
 							var s = allocStat("vsync", vst);
 							s.drawCalls = 0;
+							s.dispatches = 0;
 							waitT -= vst;
 						}
 					}
 					if( waitT > 0.5e6 /* 0.5 ms */ ) {
 						var s = allocStat(measureCpu ? "gpuwait" : "cpuwait", waitT);
 						s.drawCalls = 0;
+						s.dispatches = 0;
 					}
 				}
 			}
@@ -237,13 +259,15 @@ class Benchmark extends h2d.Graphics {
 			changed = true;
 		}
 
-		if( allocated && visible )
-			syncVisual();
+		if (withVisual) {
+			if( allocated && visible )
+				syncVisual();
+		}
 
 		measure("begin");
 	}
 
-	function syncVisual() {
+	public function syncVisual() {
 		var s2d = getScene();
 		var old = labels;
 		labels = null;
@@ -265,7 +289,7 @@ class Benchmark extends h2d.Graphics {
 			s = s.next;
 		}
 
-		var space = 52;
+		var space = 57;
 		width -= space;
 
 		var count = 0;
@@ -319,7 +343,13 @@ class Benchmark extends h2d.Graphics {
 		time.visible = true;
 		time.textColor = 0xFFFFFF;
 		var timeMs = totalTime / 1e6;
-		time.text = Std.int(timeMs) + "." + Std.int((timeMs * 10) % 10) + (measureCpu?" cpu" : " gpu");
+		var totalName = measureCpu ? "cpu" : "gpu";
+		if (measureCpuThread != null) {
+			var n = measureCpuThread.getName();
+			if (n != null)
+				totalName = n;
+		}
+		time.text = Std.int(timeMs) + "." + Std.int((timeMs * 10) % 10) + " " + totalName;
 
 		while( labels.length > count )
 			labels.pop().remove();
@@ -377,13 +407,22 @@ class Benchmark extends h2d.Graphics {
 		if( !enable ) return;
 		if( currentFrame != null && currentFrame.name == name )
 			return;
+		if( measureCpuThread != null && sys.thread.Thread.current() != measureCpuThread )
+			return;
 		var q = allocQuery();
 		q.name = name;
 		q.drawCalls = engine.drawCalls;
+		q.dispatches = engine.dispatches;
 		q.next = currentFrame;
 		currentFrame = q;
 		engine.driver.endQuery(q.q);
 		if( measureCpu ) q.value = haxe.Timer.stamp() * 1e9;
+	}
+
+	public function getCurrentId() {
+		if ( currentFrame != null )
+			return currentFrame.name;
+		return null;
 	}
 
 	public static function takeControl( app : hxd.App, ?s3d : h3d.scene.Scene ) @:privateAccess {

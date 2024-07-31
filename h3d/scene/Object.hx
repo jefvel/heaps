@@ -17,6 +17,7 @@ enum abstract ObjectFlags(Int) {
 	public var FFixedPosition = 0x2000;
 	public var FFixedPositionSynced = 0x4000;
 	public var FAlwaysSync = 0x8000;
+	public var FDrawn = 0x10000;
 	public inline function new(value) {
 		this = value;
 	}
@@ -36,6 +37,8 @@ enum abstract ObjectFlags(Int) {
 class Object {
 
 	static inline var ROT2RAD = -0.017453292519943295769236907684886;
+	static inline var NO_VELOCITY = -1;
+	static inline var VELOCITY = 0;
 
 	var flags : ObjectFlags;
 	var lastFrame : Int;
@@ -166,6 +169,11 @@ class Object {
 	public var alwaysSync(get, set) : Bool;
 
 	/**
+		When set, the object has been drawn during previous frame. Useful for temporal effects such as temporal antialiasing.
+	**/
+	public var drawn(get, set) : Bool;
+
+	/**
 		When set, collider shape will be used for automatic frustum culling.
 		If `inheritCulled` is true, collider will be inherited to children unless they have their own collider set.
 	**/
@@ -182,6 +190,8 @@ class Object {
 	var cullingColliderInherited(get, set) : Bool;
 
 	var absPos : h3d.Matrix;
+	var prevAbsPos : h3d.Matrix;
+	var prevAbsPosFrame : Int = NO_VELOCITY;
 	var invPos : h3d.Matrix;
 	var qRot : h3d.Quat;
 	var absQRot : h3d.Quat;
@@ -219,6 +229,7 @@ class Object {
 	inline function get_cullingColliderInherited() return flags.has(FCullingColliderInherited);
 	inline function get_fixedPosition() return flags.has(FFixedPosition);
 	inline function get_alwaysSync() return flags.has(FAlwaysSync);
+	inline function get_drawn() return flags.has(FDrawn);
 	inline function set_posChanged(b) return flags.set(FPosChanged, b || follow != null);
 	inline function set_culled(b) return flags.set(FCulled, b);
 	inline function set_visible(b) return flags.set(FVisible,b);
@@ -234,6 +245,7 @@ class Object {
 	inline function set_cullingColliderInherited(b) return flags.set(FCullingColliderInherited, b);
 	inline function set_fixedPosition(b) return flags.set(FFixedPosition, b);
 	inline function set_alwaysSync(b) return flags.set(FAlwaysSync, b);
+	inline function set_drawn(b) return flags.set(FDrawn, b);
 
 	/**
 		Create an animation instance bound to the object, set it as currentAnimation and play it.
@@ -416,7 +428,7 @@ class Object {
 	**/
 	public function getMeshes( ?out : Array<Mesh> ) {
 		if( out == null ) out = [];
-		var m = hxd.impl.Api.downcast(this, Mesh);
+		var m = Std.downcast(this, Mesh);
 		if( m != null ) out.push(m);
 		for( c in children )
 			c.getMeshes(out);
@@ -427,7 +439,7 @@ class Object {
 		Search for an mesh recursively by name, return null if not found.
 	**/
 	public function getMeshByName( name : String) {
-		return hxd.impl.Api.downcast(getObjectByName(name), Mesh);
+		return Std.downcast(getObjectByName(name), Mesh);
 	}
 
 	/**
@@ -518,7 +530,7 @@ class Object {
 		if( !visible || (culled && inheritCulled) )
 			return;
 		if( !culled ) {
-			var m = hxd.impl.Api.downcast(this, Mesh);
+			var m = Std.downcast(this, Mesh);
 			if( m != null ) callb(m);
 		}
 		for( o in children )
@@ -578,7 +590,7 @@ class Object {
 	public function getScene() {
 		var p = this;
 		while( p.parent != null ) p = p.parent;
-		return hxd.impl.Api.downcast(p, Scene);
+		return Std.downcast(p, Scene);
 	}
 
 	/**
@@ -605,14 +617,14 @@ class Object {
 		Tell if the object is a Mesh.
 	**/
 	public inline function isMesh() {
-		return hxd.impl.Api.downcast(this, Mesh) != null;
+		return Std.downcast(this, Mesh) != null;
 	}
 
 	/**
 		If the object is a Mesh, return the corresponding Mesh. If not, throw an exception.
 	**/
 	public function toMesh() : Mesh {
-		var m = hxd.impl.Api.downcast(this, Mesh);
+		var m = Std.downcast(this, Mesh);
 		if( m != null )
 			return m;
 		throw this + " is not a Mesh";
@@ -632,7 +644,7 @@ class Object {
 		for( obj in children ) {
 			var c = obj.getCollider();
 			if( c == null ) continue;
-			var cgrp = hxd.impl.Api.downcast(c, h3d.col.Collider.GroupCollider);
+			var cgrp = Std.downcast(c, h3d.col.Collider.GroupCollider);
 			if( cgrp != null ) {
 				for( c in cgrp.colliders )
 					colliders.push(c);
@@ -672,7 +684,21 @@ class Object {
 		return follow = v;
 	}
 
+	function calcPrevAbsPos() {
+		if ( prevAbsPosFrame == NO_VELOCITY )
+			prevAbsPos = null;
+		else if ( prevAbsPosFrame < hxd.Timer.frameCount ) {
+			prevAbsPosFrame = hxd.Timer.frameCount;
+			if ( prevAbsPos == null )
+				prevAbsPos = absPos.clone();
+			else
+				prevAbsPos.load(absPos);
+		}
+	}
+
 	function calcAbsPos() {
+		calcPrevAbsPos();
+
 		qRot.toMatrix(absPos);
 		// prepend scale
 		absPos._11 *= scaleX;
@@ -710,6 +736,7 @@ class Object {
 
 	function syncRec( ctx : RenderContext ) {
 		#if sceneprof h3d.impl.SceneProf.mark(this); #end
+
 		if( currentAnimation != null ) {
 			var old = parent;
 			var dt = ctx.elapsedTime;
@@ -799,11 +826,22 @@ class Object {
 			for( c in children )
 				c.posChanged = true;
 		}
-		if( !culled || ctx.computingStatic )
+
+		var prevForcedScreenRatio : Float = ctx.forcedScreenRatio;
+		if ( !drawn || !ctx.computeVelocity || fixedPosition || culled  )
+			prevAbsPosFrame = NO_VELOCITY;
+		else if ( prevAbsPosFrame == NO_VELOCITY )
+				prevAbsPosFrame = VELOCITY;
+		calcPrevAbsPos();
+
+		if( !culled || ctx.computingStatic ) {
 			emit(ctx);
+			drawn = false;
+		}
 
 		for( c in children )
 			c.emitRec(ctx);
+		ctx.forcedScreenRatio = prevForcedScreenRatio;
 	}
 
 	inline function set_x(v) {
@@ -893,8 +931,8 @@ class Object {
 	/**
 		Rotate around the current rotation axis by the specified angles (in radian).
 	**/
-	public function rotate( rx : Float, ry : Float, rz : Float ) {
-		var qTmp = new h3d.Quat();
+	public function rotate( rx : Float, ry : Float, rz : Float, ?qTmp : h3d.Quat ) {
+		if ( qTmp == null ) qTmp = new h3d.Quat();
 		qTmp.initRotation(rx, ry, rz);
 		qRot.multiply(qTmp,qRot);
 		posChanged = true;
@@ -919,8 +957,8 @@ class Object {
 	/**
 		Set the rotation using the specified look at direction
 	**/
-	public function setDirection( v : h3d.Vector ) {
-		qRot.initDirection(v);
+	public function setDirection( v : h3d.Vector, ?up ) {
+		qRot.initDirection(v, up);
 		posChanged = true;
 	}
 

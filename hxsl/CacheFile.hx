@@ -1,6 +1,8 @@
 package hxsl;
 import hxsl.Ast.Tools;
 
+#if (sys || nodejs)
+
 private class NullShader extends hxsl.Shader {
 	static var SRC = {
 		var output : {
@@ -53,6 +55,8 @@ class CacheFile extends Cache {
 		return Sys.systemName().toLowerCase();
 		#elseif hlsdl
 		return "gl";
+		#elseif (hldx && dx12)
+		return "dx12";
 		#elseif hldx
 		return "dx";
 		#elseif hlnx
@@ -79,7 +83,7 @@ class CacheFile extends Cache {
 
 	static var HEX = "0123456789abcdef";
 
-	function load() {
+	function load(showProgress=false) {
 		isLoading = true;
 		var t0 = haxe.Timer.stamp();
 		var wait = [];
@@ -101,7 +105,7 @@ class CacheFile extends Cache {
 		} else if( !allowCompile )
 			throw "Missing " + file;
 		if( linkCache.linked == null ) {
-			var rt = link(makeDefaultShader(), false);
+			var rt = link(makeDefaultShader(), Default);
 			linkCache.linked = rt;
 			if( rt.vertex.code == null || rt.fragment.code == null ) {
 				wait.push(rt);
@@ -109,12 +113,20 @@ class CacheFile extends Cache {
 			}
 		}
 		if( wait.length > 0 ) {
+			var fullCount = wait.length;
 			waitCount += wait.length;
 			#if hlmulti
 			for( r in wait ) {
+				if (showProgress && (waitCount % 5 == 0 || waitCount <= 1)) {
+					var progress = Std.int((1 - (waitCount / fullCount)) * 1000) / 10;
+					Sys.print('$progress%\t(${fullCount - waitCount}/$fullCount)  \r');
+				}
+
 				addNewShader(r);
 				hxd.System.timeoutTick();
 			}
+			if (showProgress)
+				Sys.println("");
 			#else
 			haxe.Timer.delay(function() {
 				for( r in wait ) {
@@ -135,6 +147,12 @@ class CacheFile extends Cache {
 	}
 
 	function resolveShader( name : String ) : hxsl.Shader {
+		if ( StringTools.endsWith(name, ".shgraph") ) {
+			var shgraph : hrt.shgraph.ShaderGraph = try cast hxd.res.Loader.currentInstance.load(name).toPrefab().load() catch( e : hxd.res.NotFound ) null;
+			if (shgraph == null)
+				return null;
+			return shgraph.makeShaderInstance();
+		}
 		var cl = Type.resolveClass(name);
 		if( cl == null )
 			return null;
@@ -267,7 +285,7 @@ class CacheFile extends Cache {
 
 			for( r in runtimes ) {
 				var shaderList = null;
-				var batchMode = false;
+				var mode : RuntimeShader.LinkMode = Default;
 				r.inst.reverse();
 				for( i in r.inst ) {
 					var s = Type.createEmptyInstance(hxsl.Shader);
@@ -280,7 +298,7 @@ class CacheFile extends Cache {
 							}
 							var sh = makeBatchShader(rt.rt, rt.shaders.next, i.batch.params);
 							i.shader = { version : null, shader : sh.shader };
-							batchMode = true;
+							mode = Batch;
 						}
 						s.constBits = i.bits;
 						s.shader = i.shader.shader;
@@ -291,7 +309,7 @@ class CacheFile extends Cache {
 				}
 				if( r == null ) continue;
 				//log("Recompile "+[for( s in shaderList ) shaderName(s)]);
-				var rt = link(shaderList, batchMode); // will compile + update linkMap
+				var rt = link(shaderList, mode); // will compile + update linkMap
 				if( rt.spec.signature != r.specSign ) {
 					var signParts = [for( i in rt.spec.instances ) i.shader.data.name+"_" + i.bits + "_" + i.index];
 					throw "assert";
@@ -318,6 +336,7 @@ class CacheFile extends Cache {
 				if( spec == null )
 					continue;
 
+				r.mode = Default;
 				r.signature = spec.signature;
 				var shaderList = null;
 				spec.inst.reverse();
@@ -332,7 +351,7 @@ class CacheFile extends Cache {
 							}
 							var sh = makeBatchShader(rt.rt, rt.shaders.next, i.batch.params);
 							i.shader = { version : null, shader : sh.shader };
-							r.batchMode = true;
+							r.mode = Batch;
 						}
 						// pseudo instance
 						var scache = i.shader.shader.instanceCache;
@@ -584,14 +603,14 @@ class CacheFile extends Cache {
 
 	function cleanRuntimeData(r:hxsl.RuntimeShader.RuntimeShaderData) {
 		var rc = new hxsl.RuntimeShader.RuntimeShaderData();
-		rc.vertex = r.vertex;
+		rc.kind = r.kind;
 		rc.data = {
 			name : null,
 			vars : [],
 			funs : null,
 		};
 		for( v in r.data.vars )
-			if( v.kind == (r.vertex ? Input : Output) ) {
+			if( v.kind == (r.kind == Vertex ? Input : Output) ) {
 				rc.data.vars.push({
 					id : v.id,
 					name : v.name,
@@ -644,8 +663,8 @@ class CacheFile extends Cache {
 	}
 
 	function sortBySpec( r1 : RuntimeShader, r2 : RuntimeShader ) {
-		if( r1.batchMode != r2.batchMode )
-			return r1.batchMode ? 1 : -1;
+		if( r1.mode != r2.mode )
+			return r1.mode.getIndex() - r2.mode.getIndex();
 		var minLen = hxd.Math.imin(r1.spec.instances.length, r2.spec.instances.length);
 		for( i in 0...minLen ) {
 			var i1 = r1.spec.instances[i];
@@ -704,7 +723,7 @@ class CacheFile extends Cache {
 
 	public dynamic function onMissingShader(shaders:hxsl.ShaderList) {
 		log("Missing shader " + [for( s in shaders ) shaderName(s)]);
-		return link(null, false); // default fallback
+		return link(null, Default); // default fallback
 	}
 
 	public dynamic function onNewShader(r:RuntimeShader) {
@@ -736,7 +755,7 @@ class CacheFile extends Cache {
 		for( i in s.spec.instances ) {
 			var inst = shaders.get(i.shader.data.name);
 			if( inst == null ) {
-				if( s.batchMode && StringTools.startsWith(i.shader.data.name,"batchShader_") )
+				if( s.mode == Batch && StringTools.startsWith(i.shader.data.name,"batchShader_") )
 					continue;
 				var version = getShaderVersion(i.shader);
 				inst = { shader : i.shader, version : version };
@@ -778,3 +797,5 @@ class CacheFile extends Cache {
 	}
 
 }
+
+#end

@@ -1,96 +1,102 @@
 package h3d.prim;
+
 import h3d.col.Point;
 
 class Capsule extends Polygon {
+	var ray:Float;
+	var length:Float;
+	var segs:Int;
 
-	@:s var radius : Float;
-	@:s var segsH : Int;
-	@:s var segsW : Int;
+	public function new(ray = 1., length = 1., segs = 8) {
+		this.ray = ray;
+		this.length = length;
+		this.segs = segs;
 
-	public function new( radius = 1., length = 1., segsW = 8, segsH = 6 ) {
-		this.radius = radius;
-		this.segsH = segsH;
-		this.segsW = segsW;
-
-		var dp = Math.PI * 2 / segsW;
+		var dp = Math.PI / segs;
 		var pts = [], idx = new hxd.IndexBuffer();
-		var dx = 1, dy = segsW + 1;
-		for( y in 0...segsH+1 ) {
-			var t = (y / segsH) * Math.PI;
-			var st = Math.sin(t);
-			var pz = Math.cos(t);
-			var p = 0.;
-			for( x in 0...segsW+1 ) {
-				var px = st * Math.cos(p);
-				var py = st * Math.sin(p);
-				var i = pts.length;
-				pts.push(new Point(px * radius, py * radius, pz * radius - length * 0.5));
-				p += dp;
-			}
-		}
-
-		for( y in 0...segsH+1 ) {
-			var t = (y / segsH) * Math.PI;
-			var st = Math.sin(t);
-			var pz = Math.cos(t);
-			var p = 0.;
-			for( x in 0...segsW+1 ) {
-				var px = st * Math.cos(p);
-				var py = st * Math.sin(p);
-				var i = pts.length;
-				pts.push(new Point(px * radius, py * radius, pz * radius + length * 0.5));
-				p += dp;
-			}
-		}
-
-		for( y in 0...segsH * 2 ) {
-			for( x in 0...segsW * 2 ) {
-				inline function vertice(x, y) return x + y * (segsW + 1);
-				var v1 = vertice(x + 1, y);
-				var v2 = vertice(x, y);
-				var v3 = vertice(x, y + 1);
-				var v4 = vertice(x + 1, y + 1);
-				if( y != 0 ) {
-					idx.push(v1);
-					idx.push(v2);
-					idx.push(v4);
-				}
-				if( y != segsH - 1 ) {
-					idx.push(v2);
-					idx.push(v3);
-					idx.push(v4);
+		normals = [];
+		function halfSphere(offsetX:Float, offsetPhi:Float) {
+			var indexOffset = pts.length;
+			for (y in 0...segs + 1) {
+				var t = (y / segs) * Math.PI;
+				var st = Math.sin(t);
+				var pz = Math.cos(t);
+				var p = offsetPhi;
+				for (x in 0...segs + 1) {
+					var px = st * Math.cos(p);
+					var py = st * Math.sin(p);
+					pts.push(new Point(px * ray + offsetX, py * ray, pz * ray));
+					normals.push(new Point(px, py, pz));
+					p += dp;
 				}
 			}
-        }
+			for (y in 0...segs) {
+				for (x in 0...segs) {
+					inline function vertice(x, y)
+						return x + y * (segs + 1) + indexOffset;
+					var v1 = vertice(x + 1, y);
+					var v2 = vertice(x, y);
+					var v3 = vertice(x, y + 1);
+					var v4 = vertice(x + 1, y + 1);
+					if (y != 0) {
+						idx.push(v1);
+						idx.push(v2);
+						idx.push(v4);
+					}
+					if (y != segs - 1) {
+						idx.push(v2);
+						idx.push(v3);
+						idx.push(v4);
+					}
+				}
+			}
+		}
+		function cylinder() {
+			var indexOffset = pts.length;
+			for (y in 0...segs * 2 + 1) {
+				var t = y / segs * Math.PI;
+				var st = Math.sin(t);
+				var pz = Math.cos(t);
+				pts.push(new Point(-length * 0.5, st * ray, pz * ray));
+				pts.push(new Point(length * 0.5, st * ray, pz * ray));
+				normals.push(new Point(0.0, st, pz));
+				normals.push(new Point(0.0, st, pz));
+			}
+			for (x in 0...segs * 2) {
+				inline function vertice(i)
+					return i + indexOffset;
+				var v0 = vertice(x * 2);
+				var v1 = vertice(x * 2 + 1);
+				var v2 = vertice(x * 2 + 2);
+				var v3 = vertice(x * 2 + 3);
+				idx.push(v0);
+				idx.push(v1);
+				idx.push(v2);
+				idx.push(v1);
+				idx.push(v3);
+				idx.push(v2);
+			}
+		}
+		halfSphere(-length * 0.5, Math.PI * 0.5);
+		halfSphere(length * 0.5, -Math.PI * 0.5);
+		cylinder();
 
 		super(pts, idx);
 	}
 
-	override public function getCollider() : h3d.col.Collider {
-		return new h3d.col.Sphere(translatedX, translatedY, translatedZ, radius * scaled);
+	override public function getCollider():h3d.col.Collider {
+		return new h3d.col.Sphere(translatedX, translatedY, translatedZ, ray * scaled);
 	}
 
-	override function addNormals() {
-		normals = points;
-	}
+	override function addNormals() {}
 
-	override function addUVs() {
-		uvs = [];
-		for( y in 0...segsH + 1 )
-			for( x in 0...segsW + 1 )
-				uvs.push(new UV(1 - x / segsW, y / segsH));
-	}
-
-	public static function defaultUnitSphere() {
+	public static function defaultUnitCapsule() {
 		var engine = h3d.Engine.getCurrent();
-		var s : Sphere = @:privateAccess engine.resCache.get(Sphere);
-		if( s != null )
+		var s:Capsule = @:privateAccess engine.resCache.get(Capsule);
+		if (s != null)
 			return s;
-		s = new h3d.prim.Sphere(1, 16, 16);
-		s.addNormals();
-		s.addUVs();
-		@:privateAccess engine.resCache.set(Sphere, s);
+		s = new h3d.prim.Capsule(1, 1, 16);
+		@:privateAccess engine.resCache.set(Capsule, s);
 		return s;
 	}
-
 }

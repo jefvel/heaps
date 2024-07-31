@@ -18,25 +18,33 @@ private class VarProps {
 class Splitter {
 
 	var vars : Map<Int,VarProps>;
+	var avars : Array<VarProps>;
 	var varNames : Map<String,TVar>;
 	var varMap : Map<TVar,TVar>;
+
+	var isBatchShader : Bool;
 
 	public function new() {
 	}
 
-	public function split( s : ShaderData ) : { vertex : ShaderData, fragment : ShaderData } {
-		var vfun = null, vvars = new Map();
-		var ffun = null, fvars = new Map();
+	public function split( s : ShaderData, isBatchShader : Bool  ) : Array<ShaderData> {
+		this.isBatchShader = isBatchShader;
+		var vfun = null, vvars = new Map(), avvars = [];
+		var ffun = null, fvars = new Map(), afvars = [];
+		var isCompute = false;
 		varNames = new Map();
 		varMap = new Map();
 		for( f in s.funs )
 			switch( f.kind ) {
-			case Vertex:
+			case Vertex, Main:
 				vars = vvars;
+				avars = avvars;
 				vfun = f;
 				checkExpr(f.expr);
+				if( f.kind == Main ) isCompute = true;
 			case Fragment:
 				vars = fvars;
+				avars = afvars;
 				ffun = f;
 				checkExpr(f.expr);
 			default:
@@ -44,7 +52,9 @@ class Splitter {
 			}
 
 		var vafterMap = [];
-		for( inf in Lambda.array(vvars) ) {
+		var length = avvars.length;
+		for( i in 0...length ) {
+			var inf = avvars[i];
 			var v = inf.v;
 			if( inf.local ) continue;
 			switch( v.kind ) {
@@ -95,7 +105,7 @@ class Splitter {
 
 		var finits = [];
 		var todo = [];
-		for( inf in fvars ) {
+		for( inf in afvars ) {
 			var v = inf.v;
 			switch( v.kind ) {
 			case Input:
@@ -144,41 +154,55 @@ class Splitter {
 		for( v in fvars )
 			checkVar(v, false, vvars, ffun.expr.p);
 
-		ffun = {
-			ret : ffun.ret,
-			ref : ffun.ref,
-			kind : ffun.kind,
-			args : ffun.args,
-			expr : mapVars(ffun.expr),
-		};
-		switch( ffun.expr.e ) {
-		case TBlock(el):
-			for( e in finits )
-				el.unshift(e);
-		default:
-			finits.push(ffun.expr);
-			ffun.expr = { e : TBlock(finits), t : TVoid, p : ffun.expr.p };
+		if( ffun != null ) {
+			ffun = {
+				ret : ffun.ret,
+				ref : ffun.ref,
+				kind : ffun.kind,
+				args : ffun.args,
+				expr : mapVars(ffun.expr),
+			};
+			switch( ffun.expr.e ) {
+			case TBlock(el):
+				for( e in finits )
+					el.unshift(e);
+			default:
+				finits.push(ffun.expr);
+				ffun.expr = { e : TBlock(finits), t : TVoid, p : ffun.expr.p };
+			}
 		}
 
 		var vvars = [for( v in vvars ) if( !v.local ) v];
 		var fvars = [for( v in fvars ) if( !v.local ) v];
 		// make sure we sort the inputs the same way they were sent in
 		inline function getId(v:VarProps) return v.origin == null ? v.v.id : v.origin.id;
-		vvars.sort(function(v1, v2) return getId(v1) - getId(v2));
-		fvars.sort(function(v1, v2) return getId(v1) - getId(v2));
+		inline function compare(v1:VarProps, v2:VarProps) {
+			var result = getId(v1) - getId(v2);
+			if ( result != 0 )
+				return result;
+			return v1.v.id - v2.v.id;
+		}
+		vvars.sort(function(v1, v2) return compare(v1, v2));
+		fvars.sort(function(v1, v2) return compare(v1, v2));
 
-		return {
-			vertex : {
+		return isCompute ? [
+			{
+				name : "main",
+				vars : [for( v in vvars ) v.v],
+				funs : [vfun],
+			}
+		] : [
+			{
 				name : "vertex",
 				vars : [for( v in vvars ) v.v],
 				funs : [vfun],
 			},
-			fragment : {
+			{
 				name : "fragment",
 				vars : [for( v in fvars ) v.v],
 				funs : [ffun],
-			},
-		};
+			}
+		];
 	}
 
 	function addExpr( f : TFunction, e : TExpr ) {
@@ -193,7 +217,8 @@ class Splitter {
 	function checkVar( v : VarProps, vertex : Bool, vvars : Map<Int,VarProps>, p ) {
 		switch( v.v.kind ) {
 		case Local if( v.requireInit ):
-			throw new Error("Variable " + v.v.name + " is used without being initialized", p);
+			if ( v.origin.parent == null || (v.origin.parent.name != "global" && !isBatchShader) )
+				throw new Error("Variable " + v.v.name + " is used without being initialized", p);
 		case Var:
 			if( !vertex ) {
 				var i = vvars.get(v.origin.id);
@@ -234,6 +259,8 @@ class Splitter {
 						kind : v.kind,
 						type : v.type,
 					};
+					if( v.qualifiers != null && v.qualifiers.indexOf(Final) >= 0 )
+						nv.qualifiers = [Final];
 					uniqueName(nv);
 				}
 				varMap.set(v,nv);
@@ -241,6 +268,7 @@ class Splitter {
 			i = new VarProps(nv);
 			i.origin = v;
 			vars.set(v.id, i);
+			avars.push(i);
 		}
 		return i;
 	}

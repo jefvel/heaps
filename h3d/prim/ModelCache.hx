@@ -6,7 +6,7 @@ typedef HideProps = {
 
 class ModelCache {
 
-	var models : Map<String, { lib : hxd.fmt.hmd.Library, props : HideProps, col : Array<h3d.col.TransformCollider> }>;
+	var models : Map<String, { lib : hxd.fmt.hmd.Library, props : HideProps, col : Array<h3d.col.TransformCollider>, lastTime : Float }>;
 	var textures : Map<String, h3d.mat.Texture>;
 	var anims : Map<String, h3d.anim.Animation>;
 
@@ -41,15 +41,16 @@ class ModelCache {
 				haxe.Json.parse(hxd.res.Loader.currentInstance.load(parts.join(".")).toText());
 			} catch( e : hxd.res.NotFound )
 				null;
-			m = { lib : res.toHmd(), props : props, col : null };
+			m = { lib : res.toHmd(), props : props, col : null, lastTime : 0. };
 			models.set(path, m);
 		}
+		m.lastTime = haxe.Timer.stamp();
 		return m;
 	}
 
 	public function loadModel( res : hxd.res.Model ) : h3d.scene.Object {
 		var m = loadLibraryData(res);
-		return m.lib.makeObject(loadTexture.bind(res));
+		return m.lib.makeObject(texturePath -> loadTexture(res, texturePath));
 	}
 
 	public function loadCollider( res : hxd.res.Model ) {
@@ -59,6 +60,9 @@ class ModelCache {
 			var colliders = [];
 			for( m in lib.header.models ) {
 				if( m.geometry < 0 ) continue;
+				var prim = @:privateAccess lib.makePrimitive(m);
+				if (prim == null)
+					continue;
 				var pos = m.position.toMatrix();
 				var parent = lib.header.models[m.parent];
 				while( parent != null ) {
@@ -66,7 +70,6 @@ class ModelCache {
 					pos.multiply3x4(pos, pp);
 					parent = lib.header.models[parent.parent];
 				}
-				var prim = @:privateAccess lib.makePrimitive(m.geometry);
 				var col = cast(prim.getCollider(), h3d.col.Collider.OptimizedCollider);
 				colliders.push(new h3d.col.TransformCollider(pos,col));
 			}
@@ -106,7 +109,7 @@ class ModelCache {
 				tres = hxd.res.Loader.currentInstance.load(path);
 			} catch( e : hxd.res.NotFound ) {
 				// force good path error
-				throw error;
+				throw error + (model != null ? " fullpath : " + fullPath : "");
 			}
 		}
 		var img = tres.toImage();
@@ -145,10 +148,30 @@ class ModelCache {
 		return a;
 	}
 
+	public function cleanModels( lastUseTime = 180 ) {
+		var now = haxe.Timer.stamp();
+		var lastT = now - lastUseTime;
+		for( m in models ) {
+			if( m.lastTime < lastT ) {
+				var usedPrim = false;
+				for( p in @:privateAccess m.lib.cachedPrimitives )
+					if( p.refCount > 1 ) {
+						usedPrim = true;
+						break;
+					}
+				if( usedPrim )
+					m.lastTime = now;
+				else {
+					models.remove(m.lib.resource.entry.path);
+					m.lib.dispose();
+				}
+			}
+		}
+	}
+
 	#if hide
 
 	public function loadPrefab( res : hxd.res.Prefab, ?p : hrt.prefab.Prefab, ?parent : h3d.scene.Object ) {
-		#if prefab2
 		if( p == null )
 			p = res.load();
 		var prevChild = 0;
@@ -159,7 +182,8 @@ class ModelCache {
 		} else {
 			local3d = new h3d.scene.Object();
 		}
-		var ctx2 = p.make(local3d);
+		var sh = new hrt.prefab.ContextShared(res.entry.path, p?.findFirstLocal2d(), local3d);
+		var ctx2 = p.make(sh);
 		if( parent != null ) {
 			// only return object if a single child was added
 			// if not - multiple children were added and cannot be returned as a single object
@@ -172,31 +196,6 @@ class ModelCache {
 				return obj;
 		}
 		return local3d;
-		#else
-		if( p == null )
-			p = res.load();
-		var ctx = new hrt.prefab.Context();
-		ctx.init(res);
-		@:privateAccess ctx.shared.cache = this;
-		var prevChild = 0;
-		if( parent != null ) {
-			ctx.local3d = ctx.shared.root3d = parent;
-			prevChild = parent.numChildren;
-		}
-		var ctx2 = p.make(ctx);
-		if( parent != null ) {
-			// only return object if a single child was added
-			// if not - multiple children were added and cannot be returned as a single object
-			return parent.numChildren == prevChild + 1 ? parent.getChildAt(prevChild) : null;
-		}
-		if( ctx.local3d.numChildren == 1 ) {
-			// if we have a single root with no scale/rotate/offset we can return it
-			var obj = ctx.local3d.getChildAt(0);
-			if( obj.getTransform().isIdentity() )
-				return obj;
-		}
-		return ctx.local3d;
-		#end
 	}
 
 	#end

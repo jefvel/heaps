@@ -99,6 +99,17 @@ class LocalEntry extends FileEntry {
 	}
 
 	var watchCallback : Void -> Void;
+
+	/*
+	When a resource is load, we add a watcher on it and wtih callback to call
+	when this resource is modified. The problem is that in editor, several engine works
+	in parallel, and if the same resource is load by different engine, we have
+	to reload this resource for each engine when the file is modified (resulting
+	in one file watcher with multiple callback). This problem occures only in editor (because
+	games contains only one engine) so this feature is editor only.
+	*/
+	#if editor var watchOnChangedHistory : Array<Null<Void -> Void>>; #end
+
 	#if (hl && (hl_ver >= version("1.12.0")) && !usesys)
 	var watchHandle : hl.uv.Fs;
 	var lastChanged : Float = 0;
@@ -168,11 +179,13 @@ class LocalEntry extends FileEntry {
 			if( watchCallback != null ) {
 				WATCH_LIST.remove(this);
 				watchCallback = null;
+				#if editor watchOnChangedHistory = null; #end
 				#if (hl && (hl_ver >= version("1.12.0")) && !usesys)
 				watchHandle.close();
 				watchHandle = null;
 				#end
 			}
+
 			return;
 		}
 		if( watchCallback == null ) {
@@ -193,6 +206,11 @@ class LocalEntry extends FileEntry {
 					#end
 					w.watchCallback = null;
 					WATCH_LIST.remove(w);
+
+					#if editor
+					if (w.watchOnChangedHistory != null)
+						this.watchOnChangedHistory = w.watchOnChangedHistory.copy();
+					#end
 				}
 			WATCH_LIST.push(this);
 		}
@@ -217,9 +235,32 @@ class LocalEntry extends FileEntry {
 		#else
 		watchTime = getModifTime();
 		#end
-		watchCallback = function() { fs.convert.run(this); onChanged(); }
-	}
 
+		#if editor
+		if (watchOnChangedHistory == null)
+			watchOnChangedHistory = [ onChanged ];
+		else
+			watchOnChangedHistory.push(onChanged);
+		#end
+
+		watchCallback = function() {
+			fs.convert.run(this);
+
+			#if editor
+			if (watchOnChangedHistory == null)
+				return;
+
+			var idx = watchOnChangedHistory.length - 1;
+			while (idx >= 0) {
+				if (watchOnChangedHistory[idx] != null)
+					watchOnChangedHistory[idx]();
+				idx--;
+			}
+			#else
+			onChanged();
+			#end
+		}
+	}
 }
 
 class LocalFileSystem implements FileSystem {
@@ -231,18 +272,16 @@ class LocalFileSystem implements FileSystem {
 	static var isWindows = Sys.systemName() == "Windows";
 	public static var FILES_CHECK_MAX = 5;
 
-	public function new( dir : String, configuration : String ) {
+	public function new( dir : String, configuration : String, ?storagePath ) {
 		baseDir = dir;
 		if( configuration == null )
 			configuration = "default";
 
-		#if (macro && haxe_ver >= 4.0)
+		#if macro
 		var exePath = null;
-		#elseif (haxe_ver >= 3.3)
-		var pr = Sys.programPath();
-		var exePath = pr == null ? null : pr.split("\\").join("/").split("/");
 		#else
-		var exePath = Sys.executablePath().split("\\").join("/").split("/");
+		var pr = storagePath != null ? storagePath : Sys.programPath();
+		var exePath = pr == null ? null : pr.split("\\").join("/").split("/");
 		#end
 
 		if( exePath != null ) exePath.pop();
@@ -317,6 +356,10 @@ class LocalFileSystem implements FileSystem {
 		}
 	}
 
+	public function removePathFromCache(path : String) {
+		fileCache.remove(path);
+	}
+
 	public function exists( path : String ) {
 		var f = open(path);
 		return f != null;
@@ -352,10 +395,6 @@ class LocalFileSystem implements FileSystem {
 	public var baseDir(default,null) : String;
 
 	public function new( dir : String ) {
-		#if flash
-		if( flash.system.Capabilities.playerType == "Desktop" )
-			throw "Please compile with -lib air3";
-		#end
 		throw "Local file system is not supported for this platform";
 	}
 

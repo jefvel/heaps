@@ -12,9 +12,7 @@ class Texture {
 		The default texture color format
 	**/
 	public static var nativeFormat(default,never) : TextureFormat =
-		#if flash
-			BGRA
-		#elseif (usesys && !hldx && !hlsdl && !usegl && !macro)
+		#if (usesys && !hldx && !hlsdl && !usegl && !macro)
 			haxe.GraphicsDriver.nativeFormat
 		#else
 			RGBA
@@ -41,8 +39,12 @@ class Texture {
 	public var filter(default,set) : Filter;
 	public var wrap(default, set) : Wrap;
 	public var layerCount(get, never) : Int;
+	public var startingMip : Int = 0;
 	public var lodBias : Float = 0.;
 	public var mipLevels(get, never) : Int;
+	public var depthBias : Float = 0.;
+	public var slopeScaledBias : Float = 0.;
+	public var depthClamp : Bool = false;
 	var customMipLevels : Int;
 
 	/**
@@ -246,7 +248,7 @@ class Texture {
 		alloc();
 		if( !flags.has(Target) ) throw "Texture should be target";
 		var engine = h3d.Engine.getCurrent();
-		var color = new h3d.Vector(r,g,b,a);
+		var color = new h3d.Vector4(r,g,b,a);
 		if( layer < 0 ) {
 			for( i in 0...layerCount ) {
 				engine.pushTarget(this, i);
@@ -349,69 +351,12 @@ class Texture {
 		Beware, this is a very slow operation that shouldn't be done during rendering.
 	**/
 	public function capturePixels( face = 0, mipLevel = 0, ?region:h2d.col.IBounds ) : hxd.Pixels {
-		#if flash
-		if( flags.has(Cube) ) throw "Can't capture cube texture on this platform";
-		if( region != null ) throw "Can't capture texture region on this platform";
-		if( face != 0 || mipLevel != 0 ) throw "Can't capture face/mipLevel on this platform";
-		return capturePixelsFlash();
-		#else
 		var old = lastFrame;
 		preventAutoDispose();
 		var pix = mem.driver.capturePixels(this, face, mipLevel, region);
 		lastFrame = old;
 		return pix;
-		#end
 	}
-
-	#if flash
-	function capturePixelsFlash() {
-		var e = h3d.Engine.getCurrent();
-		var oldW = e.width, oldH = e.height;
-		var oldF = filter, oldM = mipMap, oldWrap = wrap;
-		if( e.width < width || e.height < height )
-			e.resize(width, height);
-		e.driver.clear(new h3d.Vector(0, 0, 0, 0),1,0);
-		var s2d = new h2d.Scene();
-		var b = new h2d.Bitmap(h2d.Tile.fromTexture(this), s2d);
-		var shader = new h3d.shader.AlphaChannel();
-		b.addShader(shader); // erase alpha
-		b.blendMode = None;
-
-		mipMap = None;
-
-		s2d.render(e);
-
-		var pixels = hxd.Pixels.alloc(width, height, ARGB);
-		e.driver.captureRenderBuffer(pixels);
-
-		shader.showAlpha = true;
-		s2d.render(e); // render only alpha channel
-		var alpha = hxd.Pixels.alloc(width, height, ARGB);
-		e.driver.captureRenderBuffer(alpha);
-		var alphaPos = hxd.Pixels.getChannelOffset(alpha.format, A);
-		var redPos = hxd.Pixels.getChannelOffset(alpha.format, R);
-		var bpp = @:privateAccess alpha.bytesPerPixel;
-		for( y in 0...height ) {
-			var p = y * width * bpp;
-			for( x in 0...width ) {
-				pixels.bytes.set(p + alphaPos, alpha.bytes.get(p + redPos)); // copy alpha value only
-				p += bpp;
-			}
-		}
-		alpha.dispose();
-		pixels.flags.unset(AlphaPremultiplied);
-
-		if( e.width != oldW || e.height != oldH )
-			e.resize(oldW, oldH);
-		e.driver.clear(new h3d.Vector(0, 0, 0, 0));
-		s2d.dispose();
-
-		filter = oldF;
-		mipMap = oldM;
-		wrap = oldWrap;
-		return pixels;
-	}
-	#end
 
 	public static function fromBitmap( bmp : hxd.BitmapData ) {
 		var t = new Texture(bmp.width, bmp.height);
@@ -428,7 +373,7 @@ class Texture {
 	/**
 		Creates a 1x1 texture using the RGB color passed as parameter.
 	**/
-	public static function fromColor( color : Int, ?alpha = 1. ) {
+	public static function fromColor( color : Int, alpha = 1. ) {
 		var engine = h3d.Engine.getCurrent();
 		var aval = Std.int(alpha * 255);
 		if( aval < 0 ) aval = 0 else if( aval > 255 ) aval = 255;
@@ -568,7 +513,7 @@ class Texture {
 
 	public function isDepth() {
 		return switch( format ) {
-		case Depth16, Depth24, Depth24Stencil8: true;
+		case Depth16, Depth24, Depth24Stencil8, Depth32: true;
 		default: false;
 		}
 	}

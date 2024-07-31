@@ -15,10 +15,11 @@ class CameraController extends h3d.scene.Object {
 	public var fovZoomAmount = 1.1;
 	public var panSpeed = 1.;
 	public var smooth = 0.6;
-	public var minDistance : Float = 0.;
+	public var minDistance : Float = 1;
 	public var maxDistance : Float = 1e20;
 
 	public var lockZPlanes = false;
+	public var enableZoom = true;
 
 	var scene : h3d.scene.Scene;
 	var pushing = -1;
@@ -30,9 +31,9 @@ class CameraController extends h3d.scene.Object {
 	var moveY = 0.;
 	var pushTime : Float;
 	var curPos = new h3d.Vector();
-	var curOffset = new h3d.Vector();
+	var curOffset = new h3d.Vector4();
 	var targetPos = new h3d.Vector(10. / 25., Math.PI / 4, Math.PI * 5 / 13);
-	var targetOffset = new h3d.Vector(0, 0, 0, 0);
+	var targetOffset = new h3d.Vector4(0, 0, 0, 0);
 
 	public function new(?distance,?parent) {
 		super(parent);
@@ -47,7 +48,7 @@ class CameraController extends h3d.scene.Object {
 	inline function get_theta() return curPos.y;
 	inline function get_phi() return curPos.z;
 	inline function get_fovY() return curOffset.w;
-	inline function get_target() return curOffset.toPoint();
+	inline function get_target() return curOffset.toVector();
 
 	/**
 		Set the controller parameters.
@@ -75,7 +76,7 @@ class CameraController extends h3d.scene.Object {
 	public function loadFromCamera( animate = false ) {
 		var scene = if( scene == null ) getScene() else scene;
 		if( scene == null ) throw "Not in scene";
-		targetOffset.load(scene.camera.target);
+		targetOffset.set(scene.camera.target.x, scene.camera.target.y, scene.camera.target.z);
 		targetOffset.w = scene.camera.fovY;
 
 		var pos = scene.camera.pos.sub(scene.camera.target);
@@ -208,18 +209,21 @@ class CameraController extends h3d.scene.Object {
 	}
 
 	function zoom(delta : Float) {
-		var dist = targetDistance;
-		if( (dist > minDistance && delta < 0) || (dist < maxDistance && delta > 0) ) {
-			targetPos.x *= Math.pow(zoomAmount, delta);
-			var expectedDist = targetDistance;
-			if( expectedDist < minDistance ) {
-				targetPos.x = minDistance * targetOffset.w;
+		if ( enableZoom ) {
+			var dist = targetDistance;
+			if( (dist > minDistance && delta < 0) || (dist < maxDistance && delta > 0) ) {
+				targetPos.x *= Math.pow(zoomAmount, delta);
+				var expectedDist = targetDistance;
+				if( expectedDist < minDistance ) {
+					targetPos.x = minDistance * targetOffset.w;
+				}
+				if( expectedDist > maxDistance ) {
+					targetPos.x = maxDistance * targetOffset.w;
+				}
 			}
-			if( expectedDist > maxDistance ) {
-				targetPos.x = maxDistance * targetOffset.w;
-			}
-		} else
-			pan( 0, 0, dist * (1 - Math.pow(zoomAmount, delta)) );
+		} else {
+			pan(0.0, 0.0, -panSpeed * delta);
+		}
 	}
 
 	function rot(dx, dy) {
@@ -228,7 +232,7 @@ class CameraController extends h3d.scene.Object {
 	}
 
 	function pan(dx, dy, dz = 0.) {
-		var v = new h3d.Vector(dx, dy, dz);
+		var v = new h3d.Vector4(dx, dy, dz);
 		scene.camera.update();
 		v.transform3x3(scene.camera.getInverseView());
 		v.w = 0;
@@ -238,16 +242,15 @@ class CameraController extends h3d.scene.Object {
 	function syncCamera() {
 		var cam = getScene().camera;
 		var distance = distance;
-		cam.target.load(curOffset);
-		cam.target.w = 1;
+		cam.target.load(curOffset.toVector());
 		cam.pos.set(
 			distance * Math.cos(theta) * Math.sin(phi) + cam.target.x,
 			distance * Math.sin(theta) * Math.sin(phi) + cam.target.y,
 			distance * Math.cos(phi) + cam.target.z
 		);
 		if( !lockZPlanes ) {
-			cam.zNear = distance * 0.01;
-			cam.zFar = distance * 100;
+			cam.zNear = Math.max(distance * 0.01, 0.1);
+			cam.zFar = Math.max(distance * 100, 1000);
 		}
 		cam.fovY = curOffset.w;
 		cam.update();

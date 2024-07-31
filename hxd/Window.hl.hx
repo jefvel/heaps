@@ -30,12 +30,23 @@ typedef DisplaySetting = {
 	framerate : Int
 }
 
+private class NativeDroppedFile extends hxd.DropFileEvent.DroppedFile {
+	public function getBytes( callback : ( data : haxe.io.Bytes ) -> Void ) {
+		haxe.Timer.delay(() -> callback(sys.io.File.getBytes(file)), 1);
+	}
+}
+
 //@:coreApi
 class Window {
 
+	static var WINDOWS : Array<Window> = [];
+
 	var resizeEvents : List<Void -> Void>;
 	var eventTargets : List<Event -> Void>;
+	var dropTargets : List<DropFileEvent -> Void>;
+	var dropFiles : Array<hxd.DropFileEvent.DroppedFile>;
 
+	public var id : Int;
 	public var width(get, never) : Int;
 	public var height(get, never) : Int;
 	public var mouseX(get, never) : Int;
@@ -92,6 +103,7 @@ class Window {
 		this.windowHeight = height;
 		eventTargets = new List();
 		resizeEvents = new List();
+		dropTargets = new List();
 		#if hlsdl
 		var sdlFlags = if (!fixed) sdl.Window.SDL_WINDOW_SHOWN | sdl.Window.SDL_WINDOW_RESIZABLE else sdl.Window.SDL_WINDOW_SHOWN;
 		#if heaps_vulkan
@@ -104,14 +116,29 @@ class Window {
 		final dxFlags = if (!fixed) dx.Window.RESIZABLE else 0;
 		window = new dx.Window(title, width, height, dx.Window.CW_USEDEFAULT, dx.Window.CW_USEDEFAULT, dxFlags);
 		#end
+		WINDOWS.push(this);
+		#if multidriver
+		id = window.id;
+		#end
 	}
 
 	public dynamic function onClose() : Bool {
 		return true;
 	}
 
+	public dynamic function onMove() : Void {
+	}
+
 	public dynamic function onMouseModeChange( from : MouseMode, to : MouseMode ) : Null<MouseMode> {
 		return null;
+	}
+
+	public function close() {
+		if( !WINDOWS.remove(this) )
+			return;
+		#if (multidriver && (hlsdl || hldx))
+		window.destroy();
+		#end
 	}
 
 	public function event( e : hxd.Event ) : Void {
@@ -166,6 +193,32 @@ class Window {
 		windowWidth = width;
 		windowHeight = height;
 		for( f in resizeEvents ) f();
+	}
+
+	public function addDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
+		if (dropTargets.length == 0) {
+			#if (hlsdl >= version("1.14.0"))
+			sdl.Sdl.setDragAndDropEnabled(true);
+			#elseif (hldx >= version("1.14.0"))
+			window.dragAndDropEnabled = true;
+			#end
+		}
+		dropTargets.push(f);
+	}
+
+	public function removeDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
+		for( e in dropTargets )
+			if( Reflect.compareMethods(e, f) ) {
+				dropTargets.remove(f);
+				break;
+			}
+		if ( dropTargets.length == 0 ) {
+			#if (hlsdl >= version("1.14.0"))
+			sdl.Sdl.setDragAndDropEnabled(false);
+			#elseif (hldx >= version("1.14.0"))
+			window.dragAndDropEnabled = false;
+			#end
+		}
 	}
 
 	public function setCursorPos( x : Int, y : Int, emitEvent : Bool = false ) : Void {
@@ -270,11 +323,26 @@ class Window {
 
 		startMouseX = curMouseX;
 		startMouseY = curMouseY;
-		
+
 		return mouseMode = v;
 	}
 
-	#if (hldx||hlsdl)
+	#if usesys
+
+		function get_vsync() : Bool return haxe.System.vsync;
+
+		function set_vsync( b : Bool ) : Bool {
+			return haxe.System.vsync = b;
+		}
+
+		function get_isFocused() : Bool return true;
+
+		function onEvent( e : Event ) : Bool {
+			event(e);
+			return true;
+		}
+
+	#elseif (hldx||hlsdl)
 
 	function get_vsync() : Bool return window.vsync;
 
@@ -328,6 +396,11 @@ class Window {
 				event(new Event(EOver));
 			case Leave:
 				event(new Event(EOut));
+			case Close:
+				return onCloseEvent();
+			case Move:
+				if( onMove != null )
+					onMove();
 			default:
 			}
 		case MouseDown if (!hxd.System.getValue(IsTouch)):
@@ -439,6 +512,7 @@ class Window {
 			#end
 			eh = new Event(ERelease, e.mouseX, e.mouseY);
 			eh.touchId = e.fingerId;
+
 		#elseif hldx
 		case KeyDown:
 			eh = new Event(EKeyDown);
@@ -458,12 +532,42 @@ class Window {
 			eh = new Event(ETextInput, mouseX, mouseY);
 			eh.charCode = e.keyCode;
 		#end
+		#if (hlsdl >= version("1.14.0") || hldx >= version("1.14.0"))
+		case DropStart:
+			dropFiles = [];
+		case DropFile:
+			#if hlsdl
+			dropFiles.push(new NativeDroppedFile(@:privateAccess String.fromUTF8(e.dropFile)));
+			#else
+			dropFiles.push(new NativeDroppedFile(@:privateAccess String.fromUCS2(e.dropFile)));
+			#end
+		case DropEnd:
+			var event = new DropFileEvent(
+				dropFiles,
+				#if hldx
+				e.mouseX, e.mouseY
+				#else
+				mouseX, mouseY
+				#end
+			);
+			for ( dt in dropTargets ) dt(event);
+			dropFiles = null;
+		#end
+		#if !hlsdl // hlsdl post both Close+Quit
 		case Quit:
-			return onClose();
+			return onCloseEvent();
+		#end
 		default:
 		}
 		if( eh != null ) event(eh);
 		return true;
+	}
+
+	function onCloseEvent() {
+		var ret = onClose();
+		if( ret )
+			close();
+		return ret;
 	}
 
 	static function initChars() : Void {
@@ -560,16 +664,6 @@ class Window {
 			addKey(sdl, keys.get(sdl));
 	}
 
-	#elseif usesys
-
-	function get_vsync() : Bool return haxe.System.vsync;
-
-	function set_vsync( b : Bool ) : Bool {
-		return haxe.System.vsync = b;
-	}
-
-	function get_isFocused() : Bool return true;
-
 	#else
 
 	function get_vsync() : Bool return true;
@@ -579,6 +673,11 @@ class Window {
 	}
 
 	function get_isFocused() : Bool return false;
+
+	function onEvent( e : Event ) : Bool {
+		event(e);
+		return true;
+	}
 
 	#end
 
@@ -745,8 +844,32 @@ class Window {
 		return "";
 	}
 
+	public function setCurrent() {
+		inst = this;
+		#if hlsdl
+		window.renderTo();
+		#end
+	}
+
 	static var inst : Window = null;
 	public static function getInstance() : Window {
 		return inst;
 	}
+
+	public static function hasWindow() {
+		return WINDOWS.length > 0;
+	}
+
+	static function dispatchEvent( e ) {
+		#if multidriver
+		if( false ) @:privateAccess WINDOWS[0].onEvent(e); // typing
+		for( w in WINDOWS )
+			if( e.windowId == w.id )
+				return w.onEvent(e);
+		return true;
+		#else
+		return inst.onEvent(e);
+		#end
+	}
+
 }

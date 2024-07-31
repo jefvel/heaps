@@ -22,12 +22,15 @@ private class ShaderInfos {
 	public var body : TExpr;
 	public var usedFunctions : Array<TFunction>;
 	public var deps : Map<ShaderInfos, Bool>;
-	public var read : Map<Int,AllocatedVar>;
-	public var write : Map<Int,AllocatedVar>;
+	public var readMap : Map<Int,AllocatedVar>;
+	public var readVars : Array<AllocatedVar>;
+	public var writeMap : Map<Int,AllocatedVar>;
+	public var writeVars : Array<AllocatedVar>;
 	public var processed : Map<Int, Bool>;
 	public var vertex : Null<Bool>;
 	public var onStack : Bool;
 	public var hasDiscard : Bool;
+	public var isCompute : Bool;
 	public var marked : Null<Bool>;
 	public function new(n, v) {
 		this.name = n;
@@ -35,8 +38,10 @@ private class ShaderInfos {
 		this.vertex = v;
 		processed = new Map();
 		usedFunctions = [];
-		read = new Map();
-		write = new Map();
+		readMap = new Map();
+		readVars = [];
+		writeMap = new Map();
+		writeVars = [];
 	}
 }
 
@@ -49,12 +54,12 @@ class Linker {
 	var varIdMap : Map<Int,Int>;
 	var locals : Map<Int,Bool>;
 	var curInstance : Int;
-	var batchMode : Bool;
+	var mode : hxsl.RuntimeShader.LinkMode;
 	var isBatchShader : Bool;
 	var debugDepth = 0;
 
-	public function new(batchMode=false) {
-		this.batchMode = batchMode;
+	public function new(mode) {
+		this.mode = mode;
 	}
 
 	inline function debug( msg : String, ?pos : haxe.PosInfos ) {
@@ -186,9 +191,12 @@ class Linker {
 		switch( e.e ) {
 		case TVar(v) if( !locals.exists(v.id) ):
 			var v = allocVar(v, e.p);
-			if( curShader != null && !curShader.write.exists(v.id) ) {
+			if( curShader != null && !curShader.writeMap.exists(v.id) ) {
 				debug(curShader.name + " read " + v.path);
-				curShader.read.set(v.id, v);
+				if( !curShader.readMap.exists(v.id) ) {
+					curShader.readMap.set(v.id, v);
+					curShader.readVars.push(v);
+				}
 				// if we read a varying, force into fragment
 				if( curShader.vertex == null && v.v.kind == Var ) {
 					debug("Force " + curShader.name+" into fragment (use varying)");
@@ -201,9 +209,10 @@ class Linker {
 			case [OpAssign, TVar(v)] if( !locals.exists(v.id) ):
 				var e2 = mapExprVar(e2);
 				var v = allocVar(v, e1.p);
-				if( curShader != null ) {
+				if( curShader != null && !curShader.writeMap.exists(v.id) ) {
 					debug(curShader.name + " write " + v.path);
-					curShader.write.set(v.id, v);
+					curShader.writeMap.set(v.id, v);
+					curShader.writeVars.push(v);
 				}
 				// don't read the var
 				return { e : TBinop(op, { e : TVar(v.v), t : v.v.type, p : e.p }, e2), t : e.t, p : e.p };
@@ -213,10 +222,11 @@ class Linker {
 				var e2 = mapExprVar(e2);
 
 				var v = allocVar(v, e1.p);
-				if( curShader != null ) {
+				if( curShader != null && !curShader.writeMap.exists(v.id) ) {
 					// TODO : mark as partial write if SWIZ
 					debug(curShader.name + " write " + v.path);
-					curShader.write.set(v.id, v);
+					curShader.writeMap.set(v.id, v);
+					curShader.writeVars.push(v);
 				}
 				return { e : TBinop(op, e1, e2), t : e.t, p : e.p };
 			default:
@@ -260,7 +270,7 @@ class Linker {
 				continue;
 			} else if( !found )
 				continue;
-			if( !parent.write.exists(v.id) )
+			if( !parent.writeMap.exists(v.id) )
 				continue;
 			if( s.vertex ) {
 				if( parent.vertex == false )
@@ -273,7 +283,7 @@ class Linker {
 			debugDepth++;
 			initDependencies(parent);
 			debugDepth--;
-			if( !parent.read.exists(v.id) )
+			if( !parent.readMap.exists(v.id) )
 				return;
 		}
 		if( v.v.kind == Var )
@@ -284,23 +294,8 @@ class Linker {
 		if( s.deps != null )
 			return;
 		s.deps = new Map();
-		for( r in s.read )
-			buildDependency(s, r, s.write.exists(r.id));
-		// propagate fragment flag
-		if( s.vertex == null )
-			for( d in s.deps.keys() )
-				if( d.vertex == false ) {
-					debug(s.name + " marked as fragment because of " + d.name);
-					s.vertex = false;
-					break;
-				}
-		// propagate vertex flag
-		if( s.vertex )
-			for( d in s.deps.keys() )
-				if( d.vertex == null ) {
-					debug(d.name + " marked as vertex because of " + s.name);
-					d.vertex = true;
-				}
+		for( r in s.readVars )
+			buildDependency(s, r, s.writeMap.exists(r.id));
 	}
 
 	function collect( cur : ShaderInfos, out : Array<ShaderInfos>, vertex : Bool ) {
@@ -348,7 +343,7 @@ class Linker {
 		curInstance = 0;
 		var outVars = [];
 		for( s in shadersData ) {
-			isBatchShader = batchMode && StringTools.startsWith(s.name,"batchShader_");
+			isBatchShader = mode == Batch && StringTools.startsWith(s.name,"batchShader_");
 			for( v in s.vars ) {
 				var v2 = allocVar(v, null, s.name);
 				if( isBatchShader && v2.v.kind == Param && !StringTools.startsWith(v2.path,"Batch_") )
@@ -368,6 +363,7 @@ class Linker {
 			init : [-3000],
 			vert : [-2000],
 			frag : [-1000],
+			main : [-2500],
 		};
 		for( s in shadersData ) {
 			for( f in s.funs ) {
@@ -375,13 +371,19 @@ class Linker {
 				if( v.kind == null ) throw "assert";
 				switch( v.kind ) {
 				case Vertex, Fragment:
+					if( mode == Compute )
+						throw "Unexpected "+v.kind.getName().toLowerCase()+"() function in compute shader";
 					addShader(s.name + "." + (v.kind == Vertex ? "vertex" : "fragment"), v.kind == Vertex, f.expr, priority);
-
+				case Main:
+					if( mode != Compute )
+						throw "Unexpected main() outside compute shader";
+					addShader(s.name, true, f.expr, priority).isCompute = true;
 				case Init:
 					var prio : Array<Int>;
 					var status : Null<Bool> = switch( f.ref.name ) {
 					case "__init__vertex": prio = initPrio.vert; true;
 					case "__init__fragment": prio = initPrio.frag; false;
+					case "__init__main": prio = initPrio.main; false;
 					default: prio = initPrio.init; null;
 					}
 					switch( f.expr.e ) {
@@ -400,6 +402,15 @@ class Linker {
 		}
 		shaders.sort(sortByPriorityDesc);
 
+		var uid = 0;
+		for( s in shaders )
+			s.uid = uid++;
+
+		#if shader_debug_dump
+		for( s in shaders )
+			debug("Found shader "+s.name+":"+s.uid);
+		#end
+
 		// build dependency tree
 		var entry = new ShaderInfos("<entry>", false);
 		entry.deps = new Map();
@@ -408,7 +419,7 @@ class Linker {
 
 		// force shaders containing discard to be included
 		for( s in shaders )
-			if( s.hasDiscard ) {
+			if( s.hasDiscard || s.isCompute ) {
 				initDependencies(s);
 				entry.deps.set(s, true);
 			}
@@ -418,15 +429,35 @@ class Linker {
 		for( s in shaders ) {
 			if( s.vertex != null ) continue;
 			var onlyParams = true;
-			for( r in s.read )
+			for( r in s.readVars )
 				if( r.v.kind != Param ) {
 					onlyParams = false;
 					break;
 				}
 			if( onlyParams ) {
-				debug("Force " + s.name+" into fragment since it only reads params");
+				debug("Force " + s.name + " into fragment since it only reads params");
 				s.vertex = false;
 			}
+		}
+
+		for( s in shaders ) {
+			if ( s.deps == null)
+				continue;
+			// propagate fragment flag
+			if( s.vertex == null )
+				for( d in s.deps.keys() )
+					if( d.vertex == false ) {
+						debug(s.name + " marked as fragment because of " + d.name);
+						s.vertex = false;
+						break;
+					}
+			// propagate vertex flag
+			if( s.vertex )
+				for( d in s.deps.keys() )
+					if( d.vertex == null ) {
+						debug(d.name + " marked as vertex because of " + s.name);
+						d.vertex = true;
+					}
 		}
 
 		// collect needed dependencies
@@ -458,9 +489,9 @@ class Linker {
 				outVars.push(v.v);
 		}
 		for( s in v.concat(f) ) {
-			for( v in s.read )
+			for( v in s.readVars )
 				addVar(v);
-			for( v in s.write )
+			for( v in s.writeVars )
 				addVar(v);
 		}
 		// cleanup unused structure vars
@@ -505,7 +536,7 @@ class Linker {
 				expr : expr,
 			};
 		}
-		var funs = [
+		var funs = mode == Compute ? [build(Main,"main",v)] : [
 			build(Vertex, "vertex", v),
 			build(Fragment, "fragment", f),
 		];

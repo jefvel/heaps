@@ -92,6 +92,18 @@ class Window {
 	public function resize( width : Int, height : Int ) : Void {
 	}
 
+	/**
+		Add a drag&drop events callback.
+	**/
+	public function addDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
+	}
+
+	/**
+		Remove a drag&drop events callback.
+	**/
+	public function removeDragAndDropTarget( f : ( event : DropFileEvent ) -> Void ) : Void {
+	}
+
 	@:deprecated("Use the displayMode property instead")
 	public function setFullScreen( v : Bool ) : Void {
 	}
@@ -101,6 +113,9 @@ class Window {
 	**/
 	public function setCursorPos( x : Int, y : Int, emitEvent : Bool = false ) : Void {
 		throw "Not implemented";
+	}
+	
+	public function setCurrent() {
 	}
 
 	static var inst : Window = null;

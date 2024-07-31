@@ -22,7 +22,7 @@ class Instanced extends Primitive {
 		}
 		primitive = m;
 		baseBounds = m.getBounds();
-		if( m.buffer == null )
+		if( m.buffer == null || m.indexes == null )
 			m.alloc(h3d.Engine.getCurrent()); // make sure first alloc is done
 	}
 

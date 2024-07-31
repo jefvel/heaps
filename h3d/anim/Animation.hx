@@ -102,6 +102,15 @@ class Animation {
 			events[frame].push(data);
 	}
 
+	public function removeEvent(frame : Int, data : String) {
+		if (events == null || events[frame] == null || !events[frame].contains(data))
+			throw 'Can\'t delete event $data because it doesn\'t exist at frame $frame';
+
+		events[frame].remove(data);
+		if (events[frame].length == 0)
+			events[frame] = null;
+	}
+
 	public function getEvents() return events;
 
 	public function getObjects() return objects;
@@ -170,7 +179,7 @@ class Animation {
 				objects.remove(a);
 				continue;
 			}
-			var joint = hxd.impl.Api.downcast(obj, h3d.scene.Skin.Joint);
+			var joint = Std.downcast(obj, h3d.scene.Skin.Joint);
 			if( joint != null ) {
 				currentSkin = cast joint.parent;
 				a.targetSkin = currentSkin != null ? currentSkin : joint.skin;

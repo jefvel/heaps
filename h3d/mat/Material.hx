@@ -40,7 +40,7 @@ class Material extends BaseMaterial {
 	public var specularTexture(get, set) : h3d.mat.Texture;
 	public var normalMap(get,set) : h3d.mat.Texture;
 
-	public var color(get, set) : Vector;
+	public var color(get, set) : Vector4;
 	public var specularAmount(get, set) : Float;
 	public var specularPower(get, set) : Float;
 	public var blendMode(default, set) : BlendMode;
@@ -130,7 +130,7 @@ class Material extends BaseMaterial {
 			m.textureShader.killAlpha = textureShader.killAlpha;
 			m.textureShader.killAlphaThreshold = textureShader.killAlphaThreshold;
 		}
-		m.color = color;
+		m.color = color.clone();
 		m.blendMode = blendMode;
 		return m;
 	}
@@ -310,7 +310,7 @@ class Material extends BaseMaterial {
 		}
 	}
 
-	#if editor
+	#if (editor && js)
 	override function editProps() {
 		return new js.jquery.JQuery('
 			<dl>

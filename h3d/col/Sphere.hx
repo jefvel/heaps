@@ -7,7 +7,7 @@ class Sphere extends Collider {
 	public var z : Float;
 	public var r : Float;
 
-	public inline function new(x=0., y=0., z=0., r=0.) {
+	public inline function new(x=0., y=0., z=0., r=1.) {
 		load(x, y, z, r);
 	}
 
@@ -69,7 +69,7 @@ class Sphere extends Collider {
 		y = v.y;
 		z = v.z;
 		var scale = m.getScale();
-		r *= Math.max(Math.max(scale.x, scale.y), scale.z);
+		r *= Math.abs(Math.max(Math.max(scale.x, scale.y), scale.z));
 		var res = f.hasSphere(this);
 		x = oldX;
 		y = oldY;
@@ -78,12 +78,36 @@ class Sphere extends Collider {
 		return res;
 	}
 
+	public function transform( m : h3d.Matrix ) {
+		var s = m.getScale();
+		var smax = hxd.Math.max(hxd.Math.max(hxd.Math.abs(s.x), hxd.Math.abs(s.y)), hxd.Math.abs(s.z));
+		r *= smax;
+		var pt = new h3d.col.Point(x,y,z);
+		pt.transform(m);
+		x = pt.x;
+		y = pt.y;
+		z = pt.z;
+	}
+
 	public inline function inSphere( s : Sphere ) {
 		return new Point(x,y,z).distanceSq(new Point(s.x,s.y,s.z)) < (s.r + r)*(s.r + r);
 	}
 
 	public function toString() {
 		return "Sphere{" + getCenter()+","+ hxd.Math.fmt(r) + "}";
+	}
+
+	public inline function dimension() {
+		return r;
+	}
+
+	public inline function clone() {
+		var s = new Sphere();
+		s.x = x;
+		s.y = y;
+		s.z = z;
+		s.r = r;
+		return s;
 	}
 
 	#if !macro

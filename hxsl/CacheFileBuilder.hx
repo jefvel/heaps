@@ -5,6 +5,7 @@ enum CacheFilePlatform {
 	OpenGL;
 	PS4;
 	XBoxOne;
+	XBoxOneGDK;
 	XBoxSeries;
 	NX;
 	NXBinaries;
@@ -20,9 +21,9 @@ private class CustomCacheFile extends CacheFile {
 		super(true, true);
 	}
 
-	override function load() {
+	override function load(showProgress=true) {
 		allowSave = true;
-		super.load();
+		super.load(showProgress);
 	}
 
 	override function addSource(r:RuntimeShader) {
@@ -58,6 +59,7 @@ private class CustomCacheFile extends CacheFile {
 		case OpenGL: "gl";
 		case PS4: "ps4";
 		case XBoxOne: "xboxone";
+		case XBoxOneGDK: "xbogdk";
 		case XBoxSeries: "xbox";
 		case NX: "nx";
 		case NXBinaries: "nxbin";
@@ -106,7 +108,6 @@ class CacheFileBuilder {
 
 	public function compileShader( r : RuntimeShader, rd : RuntimeShader.RuntimeShaderData ) : String {
 		hasCompiled = true;
-		Sys.print(".");
 		var s = generateShader(r, rd);
 		if( s == null )
 			return null;
@@ -115,7 +116,7 @@ class CacheFileBuilder {
 		if( s.code == null )
 			return binaryPayload(s.bytes);
 		if( shaderCache != null )
-			shaderCache.saveCompiledShader(s.code, s.bytes, shaderCacheConfig);
+			shaderCache.saveCompiledShader(s.code, s.bytes, shaderCacheConfig, false);
 		return s.code + binaryPayload(s.bytes);
 	}
 
@@ -131,13 +132,13 @@ class CacheFileBuilder {
 			}
 			var out = new HlslOut();
 			var code = out.run(rd.data);
-			var bytes = dx.Driver.compileShader(code, "", "main", (rd.vertex?"vs_":"ps_") + dxShaderVersion, OptimizationLevel3);
+			var bytes = dx.Driver.compileShader(code, "", "main", ((rd.kind == Vertex)?"vs_":"ps_") + dxShaderVersion, OptimizationLevel3);
 			return { code : code, bytes : bytes };
 			#else
 			throw "DirectX compilation requires -lib hldx without -D dx12";
 			#end
 		case OpenGL:
-			if( rd.vertex ) {
+			if( rd.kind == Vertex ) {
 				// both vertex and fragment needs to be compiled with the same GlslOut !
 				glout = new GlslOut();
 				glout.version = 150;
@@ -151,7 +152,7 @@ class CacheFileBuilder {
 			var tmpSrc = tmpFile + ".pssl";
 			var tmpOut = tmpFile + ".sb";
 			sys.io.File.saveContent(tmpSrc, code);
-			var args = ["-profile", rd.vertex ? "sce_vs_vs_orbis" : "sce_ps_orbis", "-o", tmpOut, tmpSrc];
+			var args = ["-profile", (rd.kind == Vertex) ? "sce_vs_vs_orbis" : "sce_ps_orbis", "-o", tmpOut, tmpSrc];
 			var p = new sys.io.Process("orbis-wave-psslc.exe", args);
 			var error = p.stderr.readAll().toString();
 			var ecode = p.exitCode();
@@ -172,7 +173,7 @@ class CacheFileBuilder {
 			var tmpSrc = tmpFile + ".hlsl";
 			var tmpOut = tmpFile + ".sb";
 			sys.io.File.saveContent(tmpSrc, code);
-			var args = ["-T", (rd.vertex ? "vs_" : "ps_") + dxShaderVersion,"-O3","-Fo", tmpOut, tmpSrc];
+			var args = ["-T", (rd.kind == Vertex ? "vs_" : "ps_") + dxShaderVersion,"-O3","-Fo", tmpOut, tmpSrc];
 			var p = new sys.io.Process(Sys.getEnv("XboxOneXDKLatest")+ "xdk\\FXC\\amd64\\fxc.exe", args);
 			var error = p.stderr.readAll().toString();
 			var ecode = p.exitCode();
@@ -183,7 +184,7 @@ class CacheFileBuilder {
 			sys.FileSystem.deleteFile(tmpSrc);
 			sys.FileSystem.deleteFile(tmpOut);
 			return { code : code, bytes : data };
-		case XBoxSeries:
+		case XBoxSeries, XBoxOneGDK:
 			#if (hldx && dx12)
 			if( !dxInitDone ) {
 				var win = new dx.Window("", 800, 600);
@@ -196,13 +197,17 @@ class CacheFileBuilder {
 			var tmpSrc = tmpFile + ".hlsl";
 			var tmpOut = tmpFile + ".sb";
 			var sign = @:privateAccess dx12Driver.computeRootSignature(r);
-			out.baseRegister = rd.vertex ? 0 : sign.fragmentRegStart;
+			out.baseRegister = (rd.kind == Vertex) ? 0 : sign.registers[1].start;
 			var code = out.run(rd.data);
-			var serializeRootSignature = @:privateAccess dx12Driver.stringifyRootSignature(sign.sign, "ROOT_SIGNATURE", sign.params);
+			var serializeRootSignature = @:privateAccess dx12Driver.stringifyRootSignature(sign.sign, "ROOT_SIGNATURE", sign.params, sign.paramsCount);
 			code = serializeRootSignature + code;
 			sys.io.File.saveContent(tmpSrc, code);
-			var args = ["-rootsig-define", "ROOT_SIGNATURE", "-T", (rd.vertex ? "vs_" : "ps_") + dxcShaderVersion,"-O3","-Fo", tmpOut, tmpSrc];
-			var p = new sys.io.Process(Sys.getEnv("GXDKLatest")+ "bin\\Scarlett\\dxc.exe", args);
+			var args = ["-rootsig-define", "ROOT_SIGNATURE", "-T", ( (rd.kind == Vertex) ? "vs_" : "ps_") + dxcShaderVersion,"-O3","-Fo", tmpOut, tmpSrc];
+			var p;
+			if( platform == XBoxOneGDK )
+				p = new sys.io.Process(Sys.getEnv("GXDKLatest")+ "bin\\XboxOne\\dxc.exe", args);
+			else
+				p = new sys.io.Process(Sys.getEnv("GXDKLatest")+ "bin\\Scarlett\\dxc.exe", args);
 			var error = p.stderr.readAll().toString();
 			var ecode = p.exitCode();
 			if( ecode != 0 )
@@ -211,18 +216,17 @@ class CacheFileBuilder {
 			var data = sys.io.File.getBytes(tmpOut);
 			sys.FileSystem.deleteFile(tmpSrc);
 			sys.FileSystem.deleteFile(tmpOut);
-			return { code : null, bytes : data };
+			return { code : code, bytes : data };
 			#else
 			throw "-lib hldx and -D dx12 are required to generate binaries for XBoxSeries";
 			#end
 		case NX:
-			if( rd.vertex )
+			if( rd.kind == Vertex )
 				glout = new hxsl.NXGlslOut();
 			return { code : glout.run(rd.data), bytes : null };
 		case NXBinaries:
-			if( rd.vertex )
+			if( rd.kind == Vertex ) {
 				glout = new hxsl.NXGlslOut();
-			if ( rd.vertex ) {
 				vertexOut = glout.run(rd.data);
 				return { code : vertexOut, bytes : null }; // binary is in fragment.code
 			}
@@ -257,8 +261,10 @@ class CacheFileBuilder {
 			case "-lib":
 				var lib = new format.hl.Reader().read(new haxe.io.BytesInput(sys.io.File.getBytes(getArg())));
 				for( s in lib.strings ) {
-					if( !StringTools.startsWith(s,"HXSL") ) continue;
+					if( !StringTools.startsWith(s,"HXS") ) continue;
 					var data = try haxe.crypto.Base64.decode(s) catch( e : Dynamic ) continue;
+					if (data.length < 4 )
+						continue;
 					var len = data.get(3);
 					var name = data.getString(4,len);
 					builder.shaderLib.set(name, s);
@@ -271,6 +277,8 @@ class CacheFileBuilder {
 				builder.platforms.push(PS4);
 			case "-xbox":
 				builder.platforms.push(XBoxOne);
+			case "-xbogdk":
+				builder.platforms.push(XBoxOneGDK);
 			case "-xbs":
 				builder.platforms.push(XBoxSeries);
 			case "-nx":

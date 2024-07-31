@@ -78,6 +78,7 @@ typedef PbrProps = {
 	@:optional var alphaKill : Bool;
 	@:optional var emissive : Float;
 	@:optional var parallax : Float;
+	@:optional var parallaxSteps : Int;
 	@:optional var textureWrap : Bool;
 
 	var enableStencil : Bool;
@@ -90,7 +91,8 @@ typedef PbrProps = {
 	@:optional var stencilReadMask : Int;
 
 	@:optional var drawOrder : String;
-	@:optional var useChecker : Bool;
+	@:optional var depthPrepass : Bool;
+	@:optional var flipBackFaceNormal : Bool;
 }
 
 class PbrMaterial extends Material {
@@ -212,7 +214,7 @@ class PbrMaterial extends Material {
 		mainPass.enableLights = true;
 
 		// Backward compatibility
-		if(Std.isOfType((props:Dynamic).culling, Bool))
+		if( (props:Dynamic).culling is Bool )
 			props.culling = (props:Dynamic).culling ? Back : None;
 		#if editor
 		if( (props:Dynamic).colorMask == null ) props.colorMask = 15;
@@ -235,8 +237,12 @@ class PbrMaterial extends Material {
 			Reflect.deleteField(props,"drawOrder");
 		if( props.depthWrite == Default )
 		 	Reflect.deleteField(props, "depthWrite");
-		if ( !props.useChecker )
-			Reflect.deleteField(props, "useChecker");
+		if ( !props.depthPrepass )
+			Reflect.deleteField(props, "depthPrepass");
+		if ( !props.flipBackFaceNormal )
+			Reflect.deleteField(props, "flipBackFaceNormal");
+		if ( props.parallaxSteps == h3d.shader.Parallax.MAX_LAYERS || props.parallaxSteps == 0 )
+			Reflect.deleteField(props, "parallaxSteps");
 		#end
 	}
 
@@ -367,6 +373,10 @@ class PbrMaterial extends Material {
 				ps = new h3d.shader.Parallax();
 				mainPass.addShader(ps);
 			}
+			if ( props.parallaxSteps != null )
+				ps.maxLayers = props.parallaxSteps;
+			else
+				ps.maxLayers = h3d.shader.Parallax.MAX_LAYERS;
 			ps.amount = props.parallax;
 			ps.heightMap = specularTexture;
 			ps.heightMapChannel = A;
@@ -386,13 +396,41 @@ class PbrMaterial extends Material {
 			p = p.nextPass;
 		}
 
-		if ( texture != null && props.useChecker ) {
-			mainPass.addShader(new h3d.shader.Checker());
-		} else {
-			var s = mainPass.getShader(h3d.shader.Checker);
-			if ( s != null )
-				mainPass.removeShader(s); 
+		if ( props.depthPrepass ) {
+			var passName = switch (props.mode) {
+			case PBR:
+				"depthPrepass";
+			case BeforeTonemapping:
+				"beforeTonemappingDepthPrepass";
+			default:
+				null;
+			}
+			if ( passName != null ) {
+				mainPass.depthTest = switch ( mainPass.depthTest ) {
+				case Less:
+					LessEqual;
+				case Greater:
+					GreaterEqual;
+				default:
+					mainPass.depthTest;
+				}
+
+				var p = allocPass(passName);
+				var killAlpha = new h3d.shader.KillAlpha();
+				killAlpha.threshold = 0.5;
+				p.addShader(killAlpha);
+				p.depthWrite = true;
+				p.depthTest = Less;
+				p.culling = mainPass.culling;
+				p.setBlendMode(None);
+			}
 		}
+
+		var sh = mainPass.getShader(h3d.shader.FlipBackFaceNormal);
+		if ( props.flipBackFaceNormal && sh == null )
+			mainPass.addShader(new h3d.shader.FlipBackFaceNormal());
+		else if ( !props.flipBackFaceNormal && sh != null )
+			mainPass.removeShader(sh); 
 	}
 
 	function setColorMask() {
@@ -501,7 +539,7 @@ class PbrMaterial extends Material {
 		return m;
 	}
 
-	#if editor
+	#if (editor && js)
 	override function editProps() {
 		var props : PbrProps = props;
 		var layers : Array< { name : String, value : Int }> = hide.Ide.inst.currentConfig.get("material.drawOrder", []);
@@ -556,6 +594,7 @@ class PbrMaterial extends Material {
 				</dd>
 				<dt>Emissive</dt><dd><input type="range" min="0" max="10" field="emissive"/></dd>
 				<dt>Parallax</dt><dd><input type="range" min="0" max="1" field="parallax"/></dd>
+				<dt>Parallax steps</dt><dd><input type="range" min="0" max="255" step="1" field="parallaxSteps"/></dd>
 				<dt>Shadows</dt><dd><input type="checkbox" field="shadows"/></dd>
 				<dt>Culling</dt>
 				<dd>
@@ -575,7 +614,8 @@ class PbrMaterial extends Material {
 						${[for( i in 0...layers.length ) '<option value="${layers[i].value}">${layers[i].name}</option>'].join("")}
 					</select>
 				</dd>
-				<dt>Checker</dt><dd><input type="checkbox" field="useChecker"/></dd>
+				<dt>Depth prepass</dt><dd><input type="checkbox" field="depthPrepass"/></dd>
+				<dt>Flip back face normal</dt><dd><input type="checkbox" field="flipBackFaceNormal"/></dd>
 			</dl>
 		');
 	}
