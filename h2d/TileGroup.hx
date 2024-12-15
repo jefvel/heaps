@@ -675,7 +675,7 @@ class TileGroup extends Drawable {
 		@param c Optional RGBA vector color of the Tile.
 		@param t The Tile to draw.
 	**/
-	public inline function addTransform(x : Float, y : Float, sx : Float, sy : Float, r : Float, ?c:h3d.Vector, t : Tile) {
+	public inline function addTransform(x : Float, y : Float, sx : Float, sy : Float, r : Float, ?c:h3d.Vector4, t : Tile) {
 		content.addTransform(x, y, sx, sy, r, c != null ? c : curColor, t);
 	}
 
