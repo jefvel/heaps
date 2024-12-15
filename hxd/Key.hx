@@ -348,6 +348,7 @@ class Key {
 		var c = keyCode;
 		if (keyNames[c] != null) {
 			return keyNames[c];
+		}
 		return switch( c ) {
 		case BACKSPACE: "Backspace";
 		case TAB: "Tab";
