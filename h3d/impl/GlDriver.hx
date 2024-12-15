@@ -324,7 +324,6 @@ class GlDriver extends Driver {
 		}
 		gl.shaderSource(s, shader.code);
 		gl.compileShader(s);
-		var log = gl.getShaderInfoLog(s);
 		if ( gl.getShaderParameter(s, GL.COMPILE_STATUS) != cast 1 ) {
 			var log = gl.getShaderInfoLog(s);
 			var lid = Std.parseInt(log.substr(9));
@@ -428,6 +427,14 @@ class GlDriver extends Driver {
 			}
 			s.buffers = [for( i in 0...shader.bufferCount ) {
 				switch( s.bufferTypes[i] ) {
+				case Storage:
+					#if js
+					throw "Storage buffer not supported in WebGL";
+					#elseif (hl_ver < version("1.15.0"))
+					throw "Storage buffer support requires -D hl-ver=1.15.0";
+					#else
+					gl.getProgramResourceIndex(p.p,GL.SHADER_STORAGE_BLOCK, "storage_uniform_buffer"+i);
+					#end
 				case RW:
 					#if js
 					throw "RW buffer not supported in WebGL";
@@ -448,7 +455,7 @@ class GlDriver extends Driver {
 				switch( s.bufferTypes[i] ) {
 				case Uniform:
 					gl.uniformBlockBinding(p.p,s.buffers[i],i + start);
-				case RW:
+				case RW, Storage:
 					#if (hl_ver >= version("1.15.0"))
 					gl.shaderStorageBlockBinding(p.p,s.buffers[i], i + start);
 					#end
@@ -620,6 +627,8 @@ class GlDriver extends Driver {
 					switch( s.bufferTypes[i] ) {
 					case Uniform:
 						gl.bindBufferBase(GL.UNIFORM_BUFFER, i + start, buf.buffers[i].vbuf);
+					case Storage:
+						gl.bindBufferBase(0x90D2 /*GL.SHADER STORAGE BUFFER*/, i + start, buf.buffers[i].vbuf);
 					case RW:
 						if ( !buf.buffers[i].flags.has(ReadWriteBuffer) )
 							throw "Buffer was allocated without ReadWriteBuffer flag";
@@ -1001,6 +1010,8 @@ class GlDriver extends Driver {
 	}
 
 	function getBindType( t : h3d.mat.Texture ) {
+		if ( t.flags.has(Is3D) )
+			return GL.TEXTURE_3D;
 		var isArray = t.flags.has(IsArray);
 		if( t.flags.has(Cube) )
 			return #if (hlsdl > version("1.15.0")) isArray ? GL.TEXTURE_CUBE_MAP_ARRAY : #end GL.TEXTURE_CUBE_MAP;
@@ -1118,7 +1129,7 @@ class GlDriver extends Driver {
 
 		// Patch RGBA to be RGBA8 because texStorage expect a "Sized Internal Format"
 		var sizedFormat = tt.internalFmt == GL.RGBA ? GL.RGBA8 : tt.internalFmt;
-		if( t.flags.has(IsArray) && !t.flags.has(Cube) ) {
+		if( ( t.flags.has(IsArray) || t.flags.has(Is3D) ) && !t.flags.has(Cube) ) {
 			gl.texStorage3D(bind, t.mipLevels, sizedFormat, tt.width, tt.height, t.layerCount);
 			checkError();
 		} else {
@@ -1129,6 +1140,7 @@ class GlDriver extends Driver {
 		for(mip in 0...t.mipLevels) {
 			var w = hxd.Math.imax(1, tt.width >> mip);
 			var h = hxd.Math.imax(1, tt.height >> mip);
+			var d = hxd.Math.imax(1, t.layerCount >> mip);
 			if( t.flags.has(Cube) ) {
 				for( i in 0...6 ) {
 					gl.texImage2D(CUBE_FACES[i], mip, tt.internalFmt, w, h, 0, getChannels(tt), tt.pixelFmt, null);
@@ -1136,6 +1148,9 @@ class GlDriver extends Driver {
 				}
 			} else if( t.flags.has(IsArray) ) {
 				gl.texImage3D(bind, mip, tt.internalFmt, w, h, t.layerCount, 0, getChannels(tt), tt.pixelFmt, null);
+				checkError();
+			} else if ( t.flags.has(Is3D) ) {
+				gl.texImage3D(bind, mip, tt.internalFmt, w, h, d, 0, getChannels(tt), tt.pixelFmt, null);
 				checkError();
 			} else {
 				gl.texImage2D(bind, mip, tt.internalFmt, w, h, 0, getChannels(tt), tt.pixelFmt, null);
@@ -1273,11 +1288,11 @@ class GlDriver extends Driver {
 	}
 
 	override function uploadTextureBitmap( t : h3d.mat.Texture, bmp : hxd.BitmapData, mipLevel : Int, side : Int ) {
-	#if hl
+		#if hl
 		var pixels = bmp.getPixels();
 		uploadTexturePixels(t, pixels, mipLevel, side);
 		pixels.dispose();
-	#else
+		#else
 		if( t.format != RGBA || t.layerCount != 1 ) {
 			var pixels = bmp.getPixels();
 			uploadTexturePixels(t, pixels, mipLevel, side);
@@ -1288,7 +1303,7 @@ class GlDriver extends Driver {
 			gl.texSubImage2D(GL.TEXTURE_2D, mipLevel, 0, 0, getChannels(t.t), t.t.pixelFmt, img.getImageData(0, 0, bmp.width, bmp.height));
 			restoreBind();
 		}
-	#end
+		#end
 	}
 
 	/*
@@ -1351,7 +1366,13 @@ class GlDriver extends Driver {
 
 	override function uploadTexturePixels( t : h3d.mat.Texture, pixels : hxd.Pixels, mipLevel : Int, side : Int ) {
 		var cubic = t.flags.has(Cube);
-		var face = cubic ? CUBE_FACES[side] : t.flags.has(IsArray) ? GL.TEXTURE_2D_ARRAY : GL.TEXTURE_2D;
+		var face = GL.TEXTURE_2D;
+		if ( cubic )
+			face = CUBE_FACES[side];
+		if ( t.flags.has(IsArray) )
+			face = GL.TEXTURE_2D_ARRAY
+		else if ( t.flags.has(Is3D) )
+			face = GL.TEXTURE_3D;
 		var bind = getBindType(t);
 		gl.bindTexture(bind, t.t.t);
 		pixels.convert(t.format);
@@ -1359,14 +1380,14 @@ class GlDriver extends Driver {
 		#if hl
 		var stream = streamData(pixels.bytes.getData(),pixels.offset,dataLen);
 		if( t.format.match(S3TC(_)) ) {
-			if( t.flags.has(IsArray) )
+			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
 				#if (hlsdl >= version("1.12.0"))
 				gl.compressedTexSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, t.t.internalFmt, dataLen, stream);
 				#else throw "TextureArray support requires hlsdl 1.12+"; #end
 			else
 				gl.compressedTexImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, dataLen, stream);
 		} else {
-			if( t.flags.has(IsArray) )
+			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
 				#if (hlsdl >= version("1.12.0"))
 				gl.texSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, getChannels(t.t), t.t.pixelFmt, stream);
 				#else throw "TextureArray support requires hlsdl 1.12+"; #end
@@ -1389,12 +1410,12 @@ class GlDriver extends Driver {
 		default: new Uint8Array(@:privateAccess pixels.bytes.b.buffer, pixels.offset, dataLen);
 		}
 		if( t.format.match(S3TC(_)) ) {
-			if( t.flags.has(IsArray) )
+			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
 				gl.compressedTexSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, t.t.internalFmt, buffer);
 			else
 				gl.compressedTexSubImage2D(face, mipLevel, 0, 0, pixels.width, pixels.height, t.t.internalFmt, buffer);
 		} else {
-			if( t.flags.has(IsArray) )
+			if( t.flags.has(IsArray) || t.flags.has(Is3D) )
 				gl.texSubImage3D(face, mipLevel, 0, 0, side, pixels.width, pixels.height, 1, getChannels(t.t), t.t.pixelFmt, buffer);
 			else
 				gl.texSubImage2D(face, mipLevel, 0, 0, pixels.width, pixels.height, getChannels(t.t), t.t.pixelFmt, buffer);
@@ -1824,10 +1845,14 @@ class GlDriver extends Driver {
 		#end
 	}
 
-	function setPolygonOffset( depthTexture : h3d.mat.Texture ) {
-		if ( depthTexture != null && ( depthTexture.depthBias != 0 || depthTexture.slopeScaledBias != 0 ) ) {
+	override function onTextureBiasChanged( t : h3d.mat.Texture ) {
+		setPolygonOffset(t);
+	}
+
+	function setPolygonOffset( depthBuffer : h3d.mat.Texture ) {
+		if ( depthBuffer != null && ( depthBuffer.depthBias != 0 || depthBuffer.slopeScaledBias != 0 ) ) {
 			gl.enable(GL.POLYGON_OFFSET_FILL);
-			gl.polygonOffset(depthTexture.slopeScaledBias, depthTexture.depthBias);
+			gl.polygonOffset(depthBuffer.slopeScaledBias, depthBuffer.depthBias);
 		}
 		else
 			gl.disable(GL.POLYGON_OFFSET_FILL);

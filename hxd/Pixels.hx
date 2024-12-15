@@ -397,7 +397,7 @@ class Pixels {
 		case [S3TC(ver),_]:
 			if( (width|height)&3 != 0 ) throw "Texture size should be 4x4 multiple";
 			var out = haxe.io.Bytes.alloc(width * height * 4);
-			if( !hl.Format.decodeDXT((this.bytes:hl.Bytes).offset(this.offset), out, width, height, ver) )
+			if( !std.format.hl.Native.decodeDXT((this.bytes:hl.Bytes).offset(this.offset), out, width, height, ver) )
 				throw "Failed to decode DDS";
 			offset = 0;
 			this.bytes = out;
@@ -564,8 +564,9 @@ class Pixels {
 			if( n == 1 || n == 4 )
 				return blocks << 1;
 			return blocks << 2;
-		case Depth16, Depth24, Depth24Stencil8, Depth32:
-			throw "Not a pixel format";
+		case Depth16: 2;
+		case Depth24: 3;
+		case Depth24Stencil8, Depth32: 4;
 		}
 	}
 
