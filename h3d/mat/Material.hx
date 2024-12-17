@@ -17,7 +17,7 @@ private typedef DefaultProps = {
 	var light : Bool;
 }
 
-@:enum abstract DefaultMode(String) {
+enum abstract DefaultMode(String) {
 	var Default = "default";
 	var Decal = "decal";
 }
