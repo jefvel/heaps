@@ -73,7 +73,7 @@ class Window {
 		When enabled, the browser zoom does not affect the canvas.
 		(default : true)
 	**/
-	public var useScreenPixels : Bool = js.Browser.supported;
+	public var useScreenPixels(default, set) : Bool = js.Browser.supported;
 	/**
 		When enabled, the user click event on the canvas that would trigger mouse capture to be enabled would be discarded.
 		(default : true)
@@ -144,7 +144,6 @@ class Window {
 			observer.observe(canvas);
 		}
 
-		haxe.Timer.delay(checkResize, 300);
 		js.Browser.window.addEventListener("resize", checkResize);
 
 		js.Browser.document.addEventListener("pointerlockchange", onPointerLockChange);
@@ -581,5 +580,15 @@ class Window {
 	}
 	function set_title( t : String ) : String {
 		return js.Browser.document.title = t;
+	}
+	
+	function set_useScreenPixels(e: Bool) {
+		var changed = e != useScreenPixels;
+		useScreenPixels = e;
+
+		if (changed)
+			checkResize();
+
+		return useScreenPixels;
 	}
 }
