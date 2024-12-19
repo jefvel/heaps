@@ -2,6 +2,7 @@ package hxd.fmt.pak;
 import hxd.fmt.pak.Data;
 
 typedef BuildPakOptions = {
+	?configuration:String,
 	?excludedPaths:Array<String>,
 	?includedPaths:Array<String>,
 }
@@ -200,6 +201,7 @@ class Build {
 		b.pakDiff = pakDiff;
 		b.excludePath = options?.excludedPaths ?? [];
 		b.includePath = options?.includedPaths ?? [];
+		b.configuration = options?.configuration ?? b.configuration;
 		b.makePak();
 	}
 
