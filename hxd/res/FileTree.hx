@@ -161,6 +161,32 @@ class FileTree {
 			var name = "R_" + invalidChars.replace(file.relPath, "_");
 			var f = try fs.get(file.relPath) catch( e : hxd.res.NotFound ) continue; // convert and filter
 			var fullPath = fs.getAbsolutePath(f);
+			
+			if (options.includedPaths != null) {
+				var include = false;
+				for (path in options.includedPaths) {
+					if (StringTools.startsWith(file.relPath, path)) {
+						include = true;
+						break;
+					}
+				}
+
+				if (!include)
+					continue;
+			}
+			
+			if (options.excludedPaths != null) {
+				var include = true;
+				for (path in options.excludedPaths) {
+					if (StringTools.startsWith(file.relPath, path)){
+						include = false;
+						break;
+					}
+				}
+
+				if (!include)
+					continue;
+			}
 
 			switch( file.ext ) {
 			case "ttf" if( Config.platform == JS ):

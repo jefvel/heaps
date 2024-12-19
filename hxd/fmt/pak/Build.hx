@@ -1,6 +1,11 @@
 package hxd.fmt.pak;
 import hxd.fmt.pak.Data;
 
+typedef BuildPakOptions = {
+	?excludedPaths:Array<String>,
+	?includedPaths:Array<String>,
+}
+
 class Build {
 
 	var fs : hxd.fs.LocalFileSystem;
@@ -188,11 +193,13 @@ class Build {
 		f.close();
 	}
 
-	public static function make( dir = "res", out = "res", ?pakDiff ) {
+	public static function make( dir = "res", out = "res", ?pakDiff, ?options: BuildPakOptions) {
 		var b = new Build();
 		b.resPath = dir;
 		b.outPrefix = out;
 		b.pakDiff = pakDiff;
+		b.excludePath = options?.excludedPaths ?? [];
+		b.includePath = options?.includedPaths ?? [];
 		b.makePak();
 	}
 
