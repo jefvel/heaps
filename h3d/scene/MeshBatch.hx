@@ -1,7 +1,4 @@
 package h3d.scene;
-
-import hxsl.ShaderList;
-
 class BatchData {
 
 	public var paramsCount : Int;
@@ -86,7 +83,7 @@ class ComputeIndirect extends hxsl.Shader {
 		@const var MAX_MATERIAL_COUNT : Int = 16;
 		@param var materialCount : Int;
 		@param var matIndex : Int;
-		// x : indexCount, y : startIndex, z : minScreenRatio, w : unused
+		// x : indexCount, y : startIndex, z : minScreenRatio, w : in first lod => minScreenRatioCulling
 		@param var matInfos : Buffer<Vec4, MAX_MATERIAL_COUNT>;
 
 		@const var ENABLE_CULLING : Bool;
@@ -144,9 +141,13 @@ class ComputeIndirect extends hxsl.Shader {
 			if ( ENABLE_LOD ) {
 				var screenRatio = scaledRadius / distToCam;
 				screenRatio = screenRatio * screenRatio;
-				for ( i in 0...lodCount ) {
+				var minScreenRatioCulling = matInfos[matOffset].w;
+				var culledByScreenRatio = screenRatio < minScreenRatioCulling;
+				culled = culled || culledByScreenRatio;
+				var lodStart = culledByScreenRatio ? lodCount : 0;
+				for ( i in lodStart...lodCount ) {
 					var minScreenRatio = matInfos[i + matOffset].z;
-					if (  screenRatio > minScreenRatio )
+					if ( screenRatio > minScreenRatio )
 						break;
 					lod++;
 				}
@@ -201,6 +202,8 @@ class MeshBatch extends MultiMaterial {
 	var instanced : h3d.prim.Instanced;
 	var dataPasses : BatchData;
 	var needUpload = false;
+
+	public var lodDistance : Float;
 
 	public var meshBatchFlags(default, null) : haxe.EnumFlags<MeshBatchFlag>;
 	var enableLOD(get, never) : Bool;
@@ -711,12 +714,13 @@ class MeshBatch extends MultiMaterial {
 					var tmpMatInfos = alloc.allocFloats( 4 * ( materialCount + emittedSubParts.length ) );
 					pos = 0;
 					for ( subPart in emittedSubParts ) {
+						var maxLod = subPart.lodIndexCount.length;
 						var lodConfig = subPart.lodConfig;
 						tmpMatInfos[pos++] = subPart.indexCount;
 						tmpMatInfos[pos++] = subPart.indexStart;
 						tmpMatInfos[pos++] = ( 0 < lodConfig.length ) ? lodConfig[0] : 0.0;
-						pos++;
-						for ( i in 0...subPart.lodIndexCount.length ) {
+						tmpMatInfos[pos++] = ( maxLod < lodConfig.length && maxLod > 0 ) ? lodConfig[lodConfig.length - 1] : 0.0;
+						for ( i in 0...maxLod ) {
 							tmpMatInfos[pos++] = subPart.lodIndexCount[i];
 							tmpMatInfos[pos++] = subPart.lodIndexStart[i];
 							tmpMatInfos[pos++] = ( i + 1 < lodConfig.length ) ? lodConfig[i + 1] : 0.0;
@@ -733,6 +737,8 @@ class MeshBatch extends MultiMaterial {
 					matInfos = alloc.allocBuffer( materialCount * lodCount, hxd.BufferFormat.VEC4_DATA, Uniform );
 					var lodConfig = hmd.getLodConfig();
 					var startIndex : Int = 0;
+					var lodConfigHasCulling = lodConfig.length > lodCount - 1;
+					var minScreenRatioCulling = lodConfigHasCulling ? lodConfig[lodConfig.length-1] : 0.0;
 					for ( i => lod in @:privateAccess hmd.lods ) {
 						for ( j in 0...materialCount ) {
 							var indexCount = lod.indexCounts[j];
@@ -740,6 +746,7 @@ class MeshBatch extends MultiMaterial {
 							tmpMatInfos[matIndex * 4 + 0] = indexCount;
 							tmpMatInfos[matIndex * 4 + 1] = startIndex;
 							tmpMatInfos[matIndex * 4 + 2] = ( i < lodConfig.length ) ? lodConfig[i] : 0.0;
+							tmpMatInfos[matIndex * 4 + 3] = minScreenRatioCulling;
 							startIndex += indexCount;
 						}
 					}
@@ -884,6 +891,10 @@ class MeshBatch extends MultiMaterial {
 		needUpload = false;
 	}
 
+	override function calcScreenRatio(ctx:RenderContext) {
+		curScreenRatio = @:privateAccess instanced.primitive.getBounds().dimension() / ( 2.0 * hxd.Math.max(lodDistance, 0.0001) );
+	}
+
 	override function draw(ctx:RenderContext) {
 		var p = dataPasses;
 		while( true ) {
@@ -895,7 +906,7 @@ class MeshBatch extends MultiMaterial {
 					p.shader.Batch_Buffer = p.buffers[bufferIndex];
 				if( p.instanceBuffers == null ) {
 					var count = hxd.Math.imin( instanceCount - p.maxInstance * bufferIndex, p.maxInstance );
-					instanced.commands.setCommand(count,p.indexCount,p.indexStart);
+					instanced.setCommand(p.matIndex, instanced.screenRatioToLod(curScreenRatio), count);
 					if ( p.commandBuffers != null && p.commandBuffers.length > 0 ) {
 						@:privateAccess instanced.commands.data = p.commandBuffers[bufferIndex].vbuf;
 						@:privateAccess instanced.commands.countBuffer = p.countBuffers[bufferIndex].vbuf;
@@ -915,6 +926,7 @@ class MeshBatch extends MultiMaterial {
 
 	override function emit(ctx:RenderContext) {
 		if( instanceCount == 0 ) return;
+		calcScreenRatio(ctx);
 		var p = dataPasses;
 		while( p != null ) {
 			var pass = p.pass;
