@@ -41,6 +41,8 @@ class Timer {
 		A frame counter, increases on each call to update()
 	**/
 	public static var frameCount = 0;
+	
+	public static var useManualFrameCount = false;
 
 	/**
 		The smoothed elapsed time (in seconds).
@@ -60,7 +62,8 @@ class Timer {
 		Update the timer calculus on each frame. This is automatically called by hxd.App
 	**/
 	public static function update() {
-		frameCount++;
+		if (!useManualFrameCount)
+			frameCount++;
 		var newTime = haxe.Timer.stamp();
 		elapsedTime = newTime - lastTimeStamp;
 		lastTimeStamp = newTime;
