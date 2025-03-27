@@ -32,6 +32,7 @@ private class ShaderInfos {
 	public var onStack : Bool;
 	public var hasDiscard : Bool;
 	public var isCompute : Bool;
+	public var hasSyntax : Bool;
 	public var marked : Null<Bool>;
 	public function new(n, v) {
 		this.name = n;
@@ -235,9 +236,43 @@ class Linker {
 			locals.set(v.id, true);
 		case TFor(v, _, _):
 			locals.set(v.id, true);
+		case TSyntax(target, code, args):
+			var mappedArgs: Array<SyntaxArg> = [];
+			for ( arg in args ) {
+				var e = switch ( arg.access ) {
+					case Read:
+						mapExprVar(arg.e);
+					case Write:
+						var e = curShader != null ? mapSyntaxWrite(arg.e) : arg.e;
+						mapExprVar(e);
+					case ReadWrite:
+						// Make sure syntax writes are appended after reads.
+						var e = mapExprVar(arg.e);
+						if (curShader != null) e = mapSyntaxWrite(e);
+						e;
+				}
+				mappedArgs.push({ e: e, access: arg.access });
+			}
+			if ( curShader != null ) curShader.hasSyntax = true;
+			return { e : TSyntax(target, code, mappedArgs), t : e.t, p : e.p };
 		default:
 		}
 		return e.map(mapExprVar);
+	}
+
+	function mapSyntaxWrite( e : TExpr ) {
+		switch ( e.e ) {
+			case TVar(v):
+				var v = allocVar(v, e.p);
+				if( !curShader.writeMap.exists(v.id) ) {
+					debug(curShader.name + " syntax write " + v.path);
+					curShader.writeMap.set(v.id, v);
+					curShader.writeVars.push(v);
+				}
+				return { e : TVar(v.v), t : v.v.type, p : e.p };
+			default:
+				return e.map(mapSyntaxWrite);
+		}
 	}
 
 	function addShader( name : String, vertex : Null<Bool>, e : TExpr, p : Int ) {
@@ -341,8 +376,12 @@ class Linker {
 			isBatchShader = mode == Batch && StringTools.startsWith(s.name,"batchShader_");
 			for( v in s.vars ) {
 				var v2 = allocVar(v, null, s.name);
-				if( isBatchShader && v2.v.kind == Param && !StringTools.startsWith(v2.path,"Batch_") )
+				if( isBatchShader && v2.v.kind == Param && !StringTools.startsWith(v2.path,"Batch_") ) {
 					v2.v.kind = Local;
+					if ( v2.v.qualifiers == null )
+						v2.v.qualifiers = [];
+					v2.v.qualifiers.push(Flat);
+				}
 				if( v.kind == Output ) outVars.push(v);
 			}
 			for( f in s.funs ) {
@@ -360,6 +399,10 @@ class Linker {
 			frag : [-1000],
 			main : [-2500],
 		};
+		var shaderOffset = {
+			vert : -1500,
+			frag : -500,
+		}
 		for( s in shadersData ) {
 			for( f in s.funs ) {
 				var v = allocVar(f.ref, f.expr.p);
@@ -368,7 +411,8 @@ class Linker {
 				case Vertex, Fragment:
 					if( mode == Compute )
 						throw "Unexpected "+v.kind.getName().toLowerCase()+"() function in compute shader";
-					addShader(s.name + "." + (v.kind == Vertex ? "vertex" : "fragment"), v.kind == Vertex, f.expr, priority);
+					var offset = v.kind == Vertex ? shaderOffset.vert : shaderOffset.frag;
+					addShader(s.name + "." + (v.kind == Vertex ? "vertex" : "fragment"), v.kind == Vertex, f.expr, priority + offset);
 				case Main:
 					if( mode != Compute )
 						throw "Unexpected main() outside compute shader";
@@ -414,7 +458,7 @@ class Linker {
 
 		// force shaders containing discard to be included
 		for( s in shaders )
-			if( s.hasDiscard || s.isCompute ) {
+			if( s.hasDiscard || s.isCompute || s.hasSyntax ) {
 				initDependencies(s);
 				entry.deps.set(s, true);
 			}

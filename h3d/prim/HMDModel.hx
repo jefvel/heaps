@@ -16,8 +16,6 @@ class HMDModel extends MeshPrimitive {
 	var lodConfig : Array<Float> = null;
 	var colliderData : Collider;
 
-	public static var lodExportKeyword : String = "LOD";
-
 	public function new( data : hxd.fmt.hmd.Data.Geometry, dataPos, lib, lods : Array<hxd.fmt.hmd.Data.Model> = null ) {
 		this.lods = [data];
 		if (lods != null) {
@@ -53,8 +51,12 @@ class HMDModel extends MeshPrimitive {
 		curMaterial = material + lod * data.indexCounts.length;
 	}
 
-	override function getMaterialIndexes(material:Int, lod:Int=0):{count:Int, start:Int} {
-		return { start : indexesTriPos[material + lod * data.indexCounts.length]*3, count : lods[lod].indexCounts[material] };
+	override function getMaterialIndexStart( material : Int, lod : Int = 0 ) : Int {
+		return indexesTriPos[material + lod * data.indexCounts.length]*3;
+	}
+
+	override function getMaterialIndexCount( material : Int, lod : Int = 0 ) : Int {
+		return lods[lod].indexCounts[material];
 	}
 
 	public function getDataBuffers(fmt, ?defaults,?material) {
@@ -257,8 +259,6 @@ class HMDModel extends MeshPrimitive {
 
 		var materialCount = data.indexCounts.length;
 		var lodLevel = Std.int(curMaterial / data.indexCounts.length);
-		if ( lodLevel >= lodCount() )
-			return;
 
 		if( indexes == null || indexes.isDisposed() )
 			alloc(engine);
@@ -348,6 +348,8 @@ class HMDModel extends MeshPrimitive {
 			return lodConfig;
 
 		var d = lib.resource.entry.directory;
+		if (d.indexOf('res/') < 0)
+			d = 'res/$d';
 		lodConfig = @:privateAccess ModelDatabase.current.getDefaultLodConfig(d);
 		return lodConfig;
 	}

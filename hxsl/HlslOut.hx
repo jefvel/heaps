@@ -134,7 +134,7 @@ class HlslOut {
 	}
 
 	inline function ident( v : TVar ) {
-		add(varName(v));
+		add(varName(v, varNames, allNames));
 	}
 
 	function decl( s : String ) {
@@ -374,7 +374,7 @@ class HlslOut {
 			 }");
 		case AtomicAdd:
 			decl("int atomicAdd( RWStructuredBuffer<int> buf, int index, int data ) { int val; InterlockedAdd(buf[index], data, val); return val; }");
-		case InvLerp: 
+		case InvLerp:
 			decl("float invLerp(float v, float a, float b) { return saturate((v - a) / (b - a)); }");
 		case TextureSize:
 			var tt = args[0].t;
@@ -729,10 +729,26 @@ class HlslOut {
 			addValue(e, tabs);
 			add(".");
 			add(f);
+		case TSyntax("code" | "hlsl", code, args):
+			var pos = 0;
+			var argRegex = ~/{(\d+)}/g;
+			while ( argRegex.matchSub(code, pos) ) {
+				var matchPos = argRegex.matchedPos();
+				add(code.substring(pos, matchPos.pos));
+				var index = Std.parseInt(argRegex.matched(1));
+				// if (index >= args.length) throw "Attempting to use substitution index of " + index + ", which is out of bounds of argument list";
+				if ( index < args.length )
+					addValue(args[index].e, tabs);
+
+				pos = matchPos.pos + matchPos.len;
+			}
+			add(code.substr(pos));
+		case TSyntax(_, _, _):
+			// Do nothing: Code for other language
 		}
 	}
 
-	function varName( v : TVar ) {
+	public static function varName(v : TVar, varNames : Map<Int, String>, allNames : Map<String, Int>) : String {
 		var n = varNames.get(v.id);
 		if( n != null )
 			return n;
@@ -788,11 +804,13 @@ class HlslOut {
 		var index = 0;
 		function declVar(prefix:String, v : TVar ) {
 			add("\t");
+			if ( Tools.hasQualifier(v, Flat) )
+				add("nointerpolation ");
 			addVar(v);
 			if( v.kind == Output )
 				add(" : " + (isVertex ? SV_POSITION : SV_TARGET + (index++)));
 			else
-				add(" : " + semanticName(v.name));
+				add(" : " + semanticName(varNames.get(v.id)));
 			add(";\n");
 			varAccess.set(v.id, prefix);
 		}
@@ -801,6 +819,8 @@ class HlslOut {
 		for( f in s.funs )
 			collectGlobals(foundGlobals, f.expr);
 
+		var oldAllNames = allNames;
+		allNames = new Map();
 		add("struct s_input {\n");
 		if( kind == Fragment )
 			add("\tfloat4 __pos__ : "+SV_POSITION+";\n");
@@ -828,6 +848,7 @@ class HlslOut {
 		add("};\n\n");
 
 		if( !isCompute ) {
+			allNames = new Map();
 			add("struct s_output {\n");
 			for( v in s.vars )
 				if( v.kind == Output )
@@ -837,6 +858,8 @@ class HlslOut {
 					declVar("_out.", v);
 			add("};\n\n");
 		}
+
+		allNames = oldAllNames;
 	}
 
 	function initGlobals( s : ShaderData ) {

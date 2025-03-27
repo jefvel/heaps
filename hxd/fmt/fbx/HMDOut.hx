@@ -11,8 +11,6 @@ typedef CollideParams = {
 }
 
 class HMDOut extends BaseLibrary {
-	public static var lodExportKeyword : String = "LOD";
-
 	var d : Data;
 	var dataOut : haxe.io.BytesOutput;
 	var filePath : String;
@@ -24,6 +22,8 @@ class HMDOut extends BaseLibrary {
 	public var generateNormals = false;
 	public var generateTangents = false;
 	public var generateCollides : CollideParams;
+	public var ignoreCollides : Array<String>;
+	var ignoreCollidesCache : Map<Int,Bool> = [];
 	public var lowPrecConfig : Map<String,Precision>;
 	public var lodsDecimation : Array<Float>;
 
@@ -157,22 +157,34 @@ class HMDOut extends BaseLibrary {
 		}
 
 		var points : Array<h3d.col.Point> = [];
+		var psearch = new haxe.ds.Vector(1024);
+		inline function getPID(x:Float,y:Float,z:Float) {
+			return Std.int(((x + y + z) * 100) % 1024) & 1023;
+		}
 		var pmap = [];
 		for( vid in 0...g.vertexCount ) {
 			var x = vbuf[vid * stride];
 			var y = vbuf[vid * stride + 1];
 			var z = vbuf[vid * stride + 2];
+			var pid = getPID(x,y,z);
+			var indexes = psearch[pid];
 			var found = false;
-			for( i in 0...points.length ) {
-				var p = points[i];
+			if( indexes == null ) {
+				indexes = [];
+				psearch[pid] = indexes;
+			}
+			for( idx in indexes ) {
+				var p = points[idx];
 				if( p.x == x && p.y == y && p.z == z ) {
-					pmap[vid] = i;
+					pmap[vid] = idx;
 					found = true;
 					break;
 				}
 			}
 			if( !found ) {
-				pmap[vid] = points.length;
+				var idx = points.length;
+				pmap[vid] = idx;
+				indexes.push(idx);
 				points.push(new h3d.col.Point(x,y,z));
 			}
 		}
@@ -776,7 +788,7 @@ class HMDOut extends BaseLibrary {
 
 	function getLODInfos( modelName : String ) : { lodLevel : Int , modelName : String } {
 
-		var keyword = lodExportKeyword;
+		var keyword = "LOD";
 		if ( modelName == null || modelName.length <= keyword.length )
 			return { lodLevel : -1, modelName : null };
 
@@ -845,9 +857,18 @@ class HMDOut extends BaseLibrary {
 			}
 			var triangleCount = 0;
 			for ( i in 0...Std.int(index.length / 3) ) {
-				var mat = mats == null ? 0 : mats[i];
+				var mat = (mats == null || i >= mats.length) ? 0 : mats[i];
 				if ( mat >= d.materials.length )
 					continue;
+				if( ignoreCollides != null ) {
+					var b = ignoreCollidesCache.get(mat);
+					if( b == null ) {
+						b = ignoreCollides.contains(d.materials[mat].name);
+						ignoreCollidesCache.set(mat, b);
+					}
+					if( b == true )
+						continue;
+				}
 				cb(unpackIndex(index[3*i]));
 				cb(unpackIndex(index[3*i+1]));
 				cb(unpackIndex(index[3*i+2]));
@@ -1268,6 +1289,8 @@ class HMDOut extends BaseLibrary {
 				var start = d.materials.length - mids.length;
 				for (idx in 0...mids.length) {
 					midsSortRemap.set(idx, mids[idx]);
+					if (idx + start < 0)
+						continue;
 					mids[idx + start] = start + idx;
 				}
 			}
@@ -1322,7 +1345,7 @@ class HMDOut extends BaseLibrary {
 				model.props.push(HasLod);
 			} else if ( lodsDecimation != null && model.skin == null ) {
 				var modelName = model.name;
-				model.name = modelName + "LOD0";
+				model.name = model.toLODName(0);
 				if( model.props == null ) model.props = [];
 				model.props.push(HasLod);
 				model.lods = [];

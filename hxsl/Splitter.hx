@@ -261,8 +261,17 @@ class Splitter {
 						kind : v.kind,
 						type : v.type,
 					};
-					if( v.qualifiers != null && v.qualifiers.indexOf(Final) >= 0 )
-						nv.qualifiers = [Final];
+					if( v.qualifiers != null ) {
+						for ( q in v.qualifiers ) {
+							switch (q) {
+							case Final, Flat:
+								if ( nv.qualifiers == null )
+									nv.qualifiers = [];
+								nv.qualifiers.push(q);
+							case Const(_), Private, Nullable, PerObject, Name(_), Shared, Precision(_), Range(_,_), Ignore, PerInstance(_), Doc(_), Borrow(_), Sampler(_):
+							}
+						}
+					}
 					uniqueName(nv);
 				}
 				varMap.set(v,nv);
@@ -320,6 +329,30 @@ class Splitter {
 			inf.local = true;
 			inf.write++;
 			checkExpr(loop);
+		case TSyntax(_, _, args):
+			var arg : Ast.SyntaxArg = null;
+			function checkSyntaxExpr( e : Ast.TExpr) {
+				switch ( e.e ) {
+					case TVar(v):
+						var inf = get(v);
+						// inf.read is decremented in order to keep accurate count of reads
+						// as it will be incremented by checkExpr afterwards
+						switch ( arg.access ) {
+							case Read: inf.read--;
+							case Write: inf.write++;
+							case ReadWrite:
+								inf.read--;
+								inf.write++;
+						}
+					default:
+						e.iter(checkSyntaxExpr);
+				}
+			}
+			for (i in 0...args.length) {
+				arg = args[i];
+				checkSyntaxExpr(arg.e);
+				checkExpr(arg.e);
+			}
 		default:
 			e.iter(checkExpr);
 		}

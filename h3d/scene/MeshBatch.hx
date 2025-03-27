@@ -13,7 +13,6 @@ class BatchData {
 	public var params : hxsl.RuntimeShader.AllocParam;
 	public var shader : hxsl.BatchShader;
 	public var shaders : Array<hxsl.Shader>;
-	public var modelViewPos : Int;
 	public var pass : h3d.mat.Pass;
 	public var computePass : h3d.mat.Pass;
 	public var commandBuffers : Array<h3d.Buffer>;
@@ -331,7 +330,8 @@ class MeshBatch extends MultiMaterial {
 		for( index in 0...materials.length ) {
 			var mat = materials[index];
 			if( mat == null ) continue;
-			var matInfo = @:privateAccess instanced.primitive.getMaterialIndexes(index);
+			var matCount = @:privateAccess instanced.primitive.getMaterialIndexCount(index);
+			var matStart = @:privateAccess instanced.primitive.getMaterialIndexStart(index);
 			for( p in mat.getPasses() ) @:privateAccess {
 				var ctx = scene.renderer.getPassByName(p.name);
 				if( ctx == null ) throw "Could't find renderer pass "+p.name;
@@ -342,8 +342,8 @@ class MeshBatch extends MultiMaterial {
 				var shader = output.shaderCache.makeBatchShader(rt, shaders, instancedParams);
 
 				var b = new BatchData();
-				b.indexCount = matInfo.count;
-				b.indexStart = matInfo.start;
+				b.indexCount = matCount;
+				b.indexStart = matStart;
 				b.paramsCount = shader.paramsSize;
 				b.maxInstance = Std.int( ( useStorageBuffer ? MAX_STORAGE_BUFFER_ELEMENTS : MAX_BUFFER_ELEMENTS ) / b.paramsCount);
 				b.bufferFormat = hxd.BufferFormat.VEC4_DATA;
@@ -508,7 +508,6 @@ class MeshBatch extends MultiMaterial {
 			}
 			if( p.perObjectGlobal != null ) {
 				if ( p.perObjectGlobal.gid == modelViewID ) {
-					batch.modelViewPos = pos - startPos;
 					addMatrix(worldPosition != null ? worldPosition : absPos);
 				} else if ( p.perObjectGlobal.gid == modelViewInverseID ) {
 					if( worldPosition == null )
@@ -530,22 +529,23 @@ class MeshBatch extends MultiMaterial {
 			}
 			var curShader = shaders[p.instance];
 			switch( p.type ) {
-			case TVec(4, _):
-				var v : h3d.Vector4 = curShader.getParamValue(p.index);
-				buf[pos++] = v.x;
-				buf[pos++] = v.y;
-				buf[pos++] = v.z;
-				buf[pos++] = v.w;
 			case TVec(size, _):
-				var v : h3d.Vector = curShader.getParamValue(p.index);
 				switch( size ) {
 				case 2:
+					var v : h3d.Vector = curShader.getParamValue(p.index);
 					buf[pos++] = v.x;
 					buf[pos++] = v.y;
-				default:
+				case 3:
+					var v : h3d.Vector = curShader.getParamValue(p.index);
 					buf[pos++] = v.x;
 					buf[pos++] = v.y;
 					buf[pos++] = v.z;
+				case 4:
+					var v : h3d.Vector4 = curShader.getParamValue(p.index);
+					buf[pos++] = v.x;
+					buf[pos++] = v.y;
+					buf[pos++] = v.z;
+					buf[pos++] = v.w;
 				}
 			case TFloat:
 				buf[pos++] = curShader.getParamFloatValue(p.index);
@@ -757,9 +757,8 @@ class MeshBatch extends MultiMaterial {
 					matInfos = alloc.allocBuffer( materialCount, hxd.BufferFormat.VEC4_DATA, Uniform );
 					var pos : Int = 0;
 					for ( i in 0...materials.length ) {
-						var matInfo = prim.getMaterialIndexes(i);
-						tmpMatInfos[pos++] = matInfo.count;
-						tmpMatInfos[pos++] = matInfo.start;
+						tmpMatInfos[pos++] = prim.getMaterialIndexCount(i);
+						tmpMatInfos[pos++] = prim.getMaterialIndexStart(i);
 						pos += 2;
 					}
 					matInfos.uploadFloats( tmpMatInfos, 0, materialCount );

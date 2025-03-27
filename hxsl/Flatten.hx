@@ -168,6 +168,7 @@ class Flatten {
 				name : v.name,
 				type : TArray(TVec(4,VFloat),SConst(size)),
 				kind : v.kind,
+				qualifiers : v.qualifiers
 			};
 			var a = new Alloc(v2,VFloat,0,0);
 			a.v = v;
@@ -246,7 +247,12 @@ class Flatten {
 	}
 
 	inline function readOffset( a : Alloc, stride : Int, delta : TExpr, index : Int, pos ) : TExpr {
-		var index = (a.t == null ? a.pos : a.pos >> 2) + index;
+		var index = switch( a.g.type ) {
+			case TBuffer(_,_,_) :
+				index;
+			default :
+				(a.t == null ? a.pos : a.pos >> 2) + index;
+		}
 		var offset : TExpr = mkAdd(delta,index,pos);
 		return { e : TArray({ e : TVar(a.g), t : a.g.type, p : pos }, offset), t : TVec(4,a.t), p:pos };
 	}

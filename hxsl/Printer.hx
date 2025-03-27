@@ -65,6 +65,7 @@ class Printer {
 				case Borrow(s): "borrow(" + s + ")";
 				case Sampler(s): "sampler("+ s + ")";
 				case Final: "final";
+				case Flat: "flat";
 				}) + " ");
 		}
 		if( v.kind != defKind )
@@ -303,6 +304,20 @@ class Printer {
 			addExpr(e, tabs);
 			add(".");
 			add(name);
+		case TSyntax(target, code, args):
+			add("Syntax.");
+			add(target);
+			add("(");
+			addConst(CString(code));
+			for ( arg in args ) {
+				switch ( arg.access ) {
+					case Read: add(", @r ");
+					case Write: add(", @w ");
+					case ReadWrite: add(", @rw ");
+				}
+				addExpr(arg.e, tabs);
+			}
+			add(")");
 		}
 
 	}

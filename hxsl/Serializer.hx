@@ -209,7 +209,7 @@ class Serializer {
 			for( q in v.qualifiers ) {
 				out.addByte(q.getIndex());
 				switch (q) {
-				case Private, Nullable, PerObject, Shared, Ignore, Final:
+				case Private, Nullable, PerObject, Shared, Ignore, Final, Flat:
 				case Const(max): out.addInt32(max == null ? 0 : max);
 				case Name(n): writeString(n);
 				case Precision(p): out.addByte(p.getIndex());
@@ -323,6 +323,13 @@ class Serializer {
 		case TField(e,name):
 			writeExpr(e);
 			writeString(name);
+		case TSyntax(target, code, args):
+			writeString(target);
+			writeString(code);
+			writeArr(args, (arg) -> {
+				writeExpr(arg.e);
+				out.addByte(arg.access.getIndex());
+			});
 		}
 		writeType(e.t);
 		// no position
@@ -391,6 +398,14 @@ class Serializer {
 		case 19: TWhile(readExpr(), readExpr(), input.readByte() != 0);
 		case 20: TMeta(readString(), readArr(readConst), readExpr());
 		case 21: TField(readExpr(), readString());
+		case 22: TSyntax(readString(), readString(), readArr(() -> {
+			return {
+				e: readExpr(),
+				access: Ast.SyntaxArgAccess.createByIndex(input.readByte()),
+				read: false,
+				write: false,
+			};
+		}));
 		default: throw "assert";
 		}
 		return {
@@ -439,6 +454,7 @@ class Serializer {
 				case 11: Borrow(readString());
 				case 12: Sampler(readString());
 				case 13: Final;
+				case 14: Flat;
 				default: throw "assert";
 				}
 				v.qualifiers.push(q);
