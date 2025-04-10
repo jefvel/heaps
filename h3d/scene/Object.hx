@@ -693,8 +693,12 @@ class Object {
 		return follow = v;
 	}
 
+	function computeVelocity() {
+		return prevAbsPosFrame != NO_VELOCITY;
+	}
+
 	function calcPrevAbsPos() {
-		if ( prevAbsPosFrame == NO_VELOCITY )
+		if ( !computeVelocity() )
 			prevAbsPos = null;
 		else if ( prevAbsPosFrame < hxd.Timer.frameCount ) {
 			prevAbsPosFrame = hxd.Timer.frameCount;
@@ -847,7 +851,7 @@ class Object {
 		var prevForcedScreenRatio : Float = ctx.forcedScreenRatio;
 		if ( !drawn || !ctx.computeVelocity || fixedPosition || culled  )
 			prevAbsPosFrame = NO_VELOCITY;
-		else if ( prevAbsPosFrame == NO_VELOCITY )
+		else if ( !computeVelocity() )
 				prevAbsPosFrame = VELOCITY;
 		calcPrevAbsPos();
 
