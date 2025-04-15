@@ -1579,6 +1579,20 @@ class GlDriver extends Driver {
 		b.data = data;
 	}
 
+	override function uploadInstanceBufferBytes(b : InstanceBuffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
+		var stride = 5*4;
+		#if hl
+		var type = GL.DRAW_INDIRECT_BUFFER;
+		gl.bindBuffer(type, b.data);
+		gl.bufferSubData(type, startVertex * stride, streamData(buf.getData(),bufPos,vertexCount * stride), bufPos * STREAM_POS, vertexCount * stride);
+		#else
+		var type = GL.ARRAY_BUFFER;
+	 	var sub = new Uint8Array(buf.getData(), bufPos, vertexCount * stride);
+	 	gl.bufferSubData(type, startVertex * stride, sub);
+		#end
+		gl.bindBuffer(type, null);
+	}
+
 	override function disposeInstanceBuffer(b:InstanceBuffer) {
 		b.data = null;
 	}
