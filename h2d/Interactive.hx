@@ -57,6 +57,10 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 
 	var scene : Scene;
 	var mouseDownButton : Int = -1;
+	var mouseDownX: Float = -1;
+	var mouseDownY: Float = -1;
+	var clickDistanceThreshold = 20;
+	public var disableDragClick = false;
 	var lastClickFrame : Int = -1;
 	var invDet : Float;
 	var maskedBounds : h2d.col.Bounds;
@@ -136,6 +140,8 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 	**/
 	public function preventClick() {
 		mouseDownButton = -1;
+		mouseDownX = -1;
+		mouseDownY = -1;
 	}
 
 	@:dox(hide)
@@ -170,6 +176,8 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 		case EPush:
 			if( enableRightButton || e.button == 0 ) {
 				mouseDownButton = e.button;
+				mouseDownX = e.relX;
+				mouseDownY = e.relY;
 				onPush(e);
 				if( e.cancel ) mouseDownButton = -1;
 			}
@@ -178,7 +186,11 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 				onRelease(e);
 				var frame = hxd.Timer.frameCount;
 				if( mouseDownButton == e.button && (lastClickFrame != frame || allowMultiClick) ) {
-					onClick(e);
+					var dx = mouseDownX - e.relX;
+					var dy = mouseDownY - e.relY;
+					if ( disableDragClick || Math.sqrt(dx * dx + dy * dy) < clickDistanceThreshold ) {
+						onClick(e);
+					}
 					lastClickFrame = frame;
 				}
 			}
