@@ -188,7 +188,7 @@ class Interactive extends Object implements hxd.SceneEvents.Interactive {
 				if( mouseDownButton == e.button && (lastClickFrame != frame || allowMultiClick) ) {
 					var dx = mouseDownX - e.relX;
 					var dy = mouseDownY - e.relY;
-					if ( disableDragClick || Math.sqrt(dx * dx + dy * dy) < clickDistanceThreshold ) {
+					if ( !disableDragClick || Math.sqrt(dx * dx + dy * dy) < clickDistanceThreshold ) {
 						onClick(e);
 					}
 					lastClickFrame = frame;
