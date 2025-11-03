@@ -68,6 +68,7 @@ class MultiFileSystem implements FileSystem {
 	}
 
 	public function get( path : String ) : FileEntry {
+		path = StringTools.replace(path, '<root>/', '');
 		var f = cache.get(path);
 		if( f != null )
 			return f;
